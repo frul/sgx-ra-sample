@@ -30,20 +30,20 @@ using greetings::VectorElement;
 #include <string>
 #include <sstream>
 
-uint64_t getPublicKey() {
+unsigned char* getPublicKey() {
     xmlInitParser();
 
-    xmlDoc *doc = xmlReadFile("settings", NULL, 0);
+    xmlDoc *doc = xmlReadFile("../../server/settings", NULL, 0);
     if (doc == nullptr) {
 	    printf("Error: unable to parse settings file");
-	    return(-1);
+	    return nullptr;
     }
 
     xmlXPathContext *xpathCtx = xmlXPathNewContext(doc);
     if(xpathCtx == nullptr) {
         fprintf(stderr,"Error: unable to create new XPath context\n");
         xmlFreeDoc(doc); 
-        return(-1);
+        return nullptr;
     }
 
     const char* xpath_expr = "//key";
@@ -52,7 +52,7 @@ uint64_t getPublicKey() {
         fprintf(stderr,"Error: unable to evaluate xpath expression\n");
         xmlXPathFreeContext(xpathCtx); 
         xmlFreeDoc(doc); 
-        return(-1);
+        return nullptr;
     }
 
     if(xmlXPathNodeSetIsEmpty(xpathObj->nodesetval)){
@@ -60,20 +60,17 @@ uint64_t getPublicKey() {
         printf("No result\n");
 		xmlXPathFreeContext(xpathCtx); 
         xmlFreeDoc(doc); 
-        return(-1);
+        return nullptr;
     }
 
-    std::string key_as_str((char*)xmlNodeGetContent(xpathObj->nodesetval->nodeTab[0]));
-    std::stringstream ss(key_as_str);
-    uint64_t key;
-    ss >> key;
-
+    unsigned char* result = new unsigned char[256];
+    strcpy( reinterpret_cast<char*>(result), reinterpret_cast<const char*>(xmlNodeGetContent(xpathObj->nodesetval->nodeTab[0])) );
 
     xmlXPathFreeObject(xpathObj);
     xmlXPathFreeContext(xpathCtx); 
     xmlCleanupParser();
 
-    return key;
+    return result;
 }
 
 void handleErrors() {}
@@ -176,7 +173,7 @@ void encrypt_example()
      */
 
     /* A 256 bit key */
-    unsigned char *key = (unsigned char *)"01234567890123456789012345678901";
+    unsigned char *key = getPublicKey();
 
     /* A 128 bit IV */
     unsigned char *iv = (unsigned char *)"0123456789012345";
