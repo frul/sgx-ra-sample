@@ -34,7 +34,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 foreach(target ${targets})
     add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs})
-    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF})
+    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES})
     # Cannot do this because these directories are not available during CMake "compile time"
     # target_include_directories(${proto_hdrs} ${grpc_hdrs})
 endforeach()

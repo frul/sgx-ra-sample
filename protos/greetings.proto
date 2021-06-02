@@ -20,5 +20,5 @@ message HelloReply {
 message NoParams {}
 
 message VectorElement {
-    int32 num = 1;
+    bytes num = 1;
 }

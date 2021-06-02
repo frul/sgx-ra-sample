@@ -1,10 +1,13 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <sstream>
 
 #include <grpc++/grpc++.h>
 
 #include "greetings.grpc.pb.h"
+
+#include "../common/encryption.hpp"
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -17,10 +20,13 @@ using greetings::Greeter;
 using greetings::NoParams;
 using greetings::VectorElement;
 
-int ReduceVector(const std::vector<int>& vec) {
+int ReduceVector(const std::vector<std::string>& vec) {
     int result = 0;
-    for (auto e: vec) {
-        result += e;
+    unsigned char *key = getPublicKey();
+    unsigned char *iv = (unsigned char *)"0123456789012345";
+    unsigned char decryptedtext[128];
+    for (auto e: vec) {     
+        result += decrypt_message((unsigned char*)e.c_str());
     }
     return result;
 }
@@ -78,7 +84,7 @@ public:
         NoParams no_params;
         std::unique_ptr<ClientReader<VectorElement> > reader(
             stub_->GetVector(&context, no_params));
-        std::vector<int> vector;
+        std::vector<std::string> vector;
         VectorElement element;
         while (reader->Read(&element)) {
             vector.push_back(element.num());
