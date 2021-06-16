@@ -1,7 +1,7 @@
 # Minimum CMake required
 cmake_minimum_required(VERSION 3.13)
 
-project(gRPC_Examples VERSION 0.0.1 LANGUAGES CXX)
+project(gRPC_Examples VERSION 0.0.1)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
@@ -26,8 +26,12 @@ message(STATUS "Using gRPC ${gRPC_VERSION}")
 find_package(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-find_package(LIBXML2 REQUIRED)
+find_package(LibXml2 REQUIRED)
+include_directories(${LIBXML2_INCLUDE_DIRS})
 set(_LIBXML lxml)
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+find_package(SGX REQUIRED)
 
 set(_GRPC_GRPCPP gRPC::grpc++)
 if(CMAKE_CROSSCOMPILING)
@@ -37,5 +41,7 @@ else()
 endif()
 
 # Add example projects
-add_subdirectory(server)
+
 add_subdirectory(client)
+
+add_subdirectory(server)

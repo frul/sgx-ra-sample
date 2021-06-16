@@ -1,0 +1,60 @@
+syntax = "proto3";
+// Namespace
+package data_exchange;
+
+service DataServer {
+    // Sends a greeting
+    rpc SayHello (HelloRequest) returns (HelloReply) {}
+    rpc SayHelloAgain (HelloRequest) returns (HelloReply) {}
+    rpc GetVector (NoParams) returns ( stream VectorElement ) {}
+
+    rpc StartAttestation (AttestationMsg0andMsg1) returns (AttestationMsg2) {}
+    rpc CompleteAttestation (AttestationMsg3) returns (AttestationMsg4) {}
+}
+
+message HelloRequest {
+    string name = 1;
+}
+
+message HelloReply {
+    string message = 1;
+}
+
+message NoParams {}
+
+message VectorElement {
+    bytes num = 1;
+}
+
+message AttestationMsg0andMsg1 {
+    uint32 extended_epid_group_id = 1;
+    bytes ga_x = 2;
+    bytes ga_y = 3;
+    bytes gid = 4;
+}
+
+message AttestationMsg2 {
+    bytes gb_x = 1;
+    bytes gb_y = 2;
+    bytes spid = 3;
+    uint32 quote_type = 4;
+    uint32 kdf_id = 5;
+    bytes gb_ga_x = 6;
+    bytes gb_ga_y = 7;
+    bytes mac = 8;
+    uint32 sig_rl_size = 9;
+    bytes sig_rl = 10;
+}
+
+message AttestationMsg3 {
+    bytes mac = 1;
+    bytes ga_x = 2;
+    bytes ga_y = 3;
+    bytes ps_sec_prop = 4;
+    uint32 quote_size = 5;
+    bytes quote = 6;
+}
+
+message AttestationMsg4 {
+    bool ok = 1;
+}

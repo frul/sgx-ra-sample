@@ -1,0 +1,14 @@
+enclave {
+    from "sgx_pthread.edl" import *;
+    from "sgx_tstdc.edl" import sgx_thread_wait_untrusted_event_ocall, sgx_thread_set_untrusted_event_ocall, sgx_thread_setwait_untrusted_events_ocall, sgx_thread_set_multiple_untrusted_events_ocall;
+    from "sgx_tkey_exchange.edl" import *;
+
+    include "sgx_key_exchange.h"
+    include "sgx_trts.h"
+
+    trusted {
+        public int generate_random_number(void);
+        public int ecall_compute_score([in, size=len] char **arr, size_t len);
+        public sgx_status_t ecall_initialize_ra([out] sgx_ra_context_t *ctx);
+    };
+};

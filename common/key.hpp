@@ -1,11 +1,17 @@
 #include <libxml/xpath.h>
 
 #include <cstring>
+#include <sstream>
+
+uint32_t convertInt(unsigned char* str) {
+    return 0;
+}
+
 
 unsigned char* getPublicKey() {
     xmlInitParser();
 
-    xmlDoc *doc = xmlReadFile("/Users/d.galanov/sgx-ra-sample/settings.xml", NULL, 0);
+    xmlDoc *doc = xmlReadFile("settings.xml", NULL, 0);
     if (doc == nullptr) {
 	    printf("Error: unable to parse settings file");
 	    return nullptr;
@@ -48,7 +54,7 @@ unsigned char* getPublicKey() {
 unsigned char* getIV() {
     xmlInitParser();
 
-    xmlDoc *doc = xmlReadFile("/Users/d.galanov/sgx-ra-sample/settings.xml", NULL, 0);
+    xmlDoc *doc = xmlReadFile("settings.xml", NULL, 0);
     if (doc == nullptr) {
 	    printf("Error: unable to parse settings file");
 	    return nullptr;

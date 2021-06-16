@@ -5,7 +5,7 @@ project(gRPC_CPP_Greetings VERSION 0.0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
-set (proto_name greetings)
+set (proto_name data_server)
 
 # Get proto files
 get_filename_component(proto "../protos/${proto_name}.proto" ABSOLUTE)
@@ -33,8 +33,9 @@ set(targets "server")
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 foreach(target ${targets})
-    add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs})
-    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES} )
+    add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs} crypto_functions.cpp base64.cpp agent_wget.cpp iasrequest.cpp ../common/utils.cpp )
+    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES} ${OPENSSL_LIBRARIES} )
+    message("PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES}")
     # Cannot do this because these directories are not available during CMake "compile time"
     # target_include_directories(${proto_hdrs} ${grpc_hdrs})
 endforeach()

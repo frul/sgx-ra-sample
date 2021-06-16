@@ -1,11 +1,6 @@
-# Minimum CMake required
-cmake_minimum_required(VERSION 3.13)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-project(gRPC_CPP_Greetings VERSION 0.0.1 LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_BUILD_TYPE RelWithDebInfo)
-
-set (proto_name greetings)
+set (proto_name data_server)
 
 # Get proto files
 get_filename_component(proto "../protos/${proto_name}.proto" ABSOLUTE)
@@ -27,15 +22,19 @@ add_custom_command(
     DEPENDS "${proto}"
 )
 
-set(targets "client")
 
-# Include generated *.pb.h files
+
+set(EDL_SEARCH_PATHS enclave)
+
+set(E_SRCS enclave/enclave.cpp)
+set(LDS enclave/enclave.lds)
+add_enclave_library(enclave SRCS ${E_SRCS} EDL enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS} LDSCRIPT ${LDS})
+enclave_sign(enclave KEY enclave/Enclave_private.pem CONFIG enclave/enclave.config.xml)
+
+set(targets "client")
+set(SRCS app/client.cpp ../common/utils.cpp)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-foreach(target ${targets})
-    add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs})
-    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES})
-    # Cannot do this because these directories are not available during CMake "compile time"
-    # target_include_directories(${proto_hdrs} ${grpc_hdrs})
-endforeach()
+add_untrusted_executable(client SRCS ${SRCS} ${proto_srcs} ${grpc_srcs} EDL enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS})
 
+add_dependencies(client enclave-sign)

@@ -26,7 +26,7 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits
      */
-    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, key, iv))
         handleErrors();
 
     /*
@@ -71,7 +71,7 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits
      */
-    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, key, iv))
         handleErrors();
 
     /*
@@ -96,15 +96,13 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
     return plaintext_len;
 }
 
-std::string encrypt_message(const std::string& str) {
-    unsigned char *key = getPublicKey();
-    unsigned char *iv = getIV();
+std::string encrypt_message(const std::string& str, unsigned char *key) {
     unsigned char ciphertext[128];
-    std::cout << str << " ";
-    int ciphertext_len = encrypt ((unsigned char*)str.c_str(), str.length(), key, iv,
+    //std::cout << str << " ";
+    int ciphertext_len = encrypt ((unsigned char*)str.c_str(), str.length(), key, nullptr,
                               ciphertext);
     ciphertext[ciphertext_len] = '\0';
-    std::cout << ciphertext_len << std::endl;
+    //std::cout << ciphertext_len << std::endl;
     return (char*)ciphertext;
 }
 
