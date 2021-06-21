@@ -48,8 +48,8 @@ IAS_Connection::IAS_Connection(int server_idx, uint32_t flags, char *priSubscrip
 	c_agent_name= "";
 	c_proxy_port= 80;
 	c_store= NULL;
-	setSubscriptionKey(SubscriptionKeyID::Primary, priSubscriptionKey); 
-	setSubscriptionKey(SubscriptionKeyID::Secondary, secSubscriptionKey); 
+	setSubscriptionKey(SubscriptionKeyID::Primary, "b94ae2aef38c48e98c4b98e06c531bf6"); 
+	setSubscriptionKey(SubscriptionKeyID::Secondary, "83548b6ae777400d8aa6586cadbf34f8"); 
 }
 
 IAS_Connection::~IAS_Connection()
@@ -107,18 +107,17 @@ string IAS_Connection::proxy_url()
 }
 
 // Encrypt the subscription key while its stored in memory
-int IAS_Connection::setSubscriptionKey(SubscriptionKeyID id, char * subscriptionKeyPlainText)
+int IAS_Connection::setSubscriptionKey(SubscriptionKeyID id, const char * subscriptionKeyPlainText)
 {
-        memset(subscription_key_enc[id], 0, sizeof(subscription_key_enc[id]));
-        memset(subscription_key_xor[id], 0, sizeof(subscription_key_xor[id]));
+	memset(subscription_key_enc[id], 0, sizeof(subscription_key_enc[id]));
+	memset(subscription_key_xor[id], 0, sizeof(subscription_key_xor[id]));
 
-        if (subscriptionKeyPlainText == NULL || (strlen(subscriptionKeyPlainText) != IAS_SUBSCRIPTION_KEY_SIZE) ||
-	    (id == SubscriptionKeyID::Last))
-        {
-                if ( debug )
-                        printf("Error Setting subscriptionKey\n");
-                return 0;
-        }
+	if (subscriptionKeyPlainText == NULL || (strlen(subscriptionKeyPlainText) != IAS_SUBSCRIPTION_KEY_SIZE) ||
+	(id == SubscriptionKeyID::Last))
+	{
+		printf("Error Setting subscriptionKey\n");
+		return 0;
+	}
 
     // Create Random one time pad
     RAND_bytes((unsigned char *)subscription_key_xor[id], (int) sizeof(subscription_key_xor[id]));
@@ -129,7 +128,7 @@ int IAS_Connection::setSubscriptionKey(SubscriptionKeyID id, char * subscription
 
 
     // zero the original subscription key in memory
-    memset(subscriptionKeyPlainText, 0, IAS_SUBSCRIPTION_KEY_SIZE);
+    //memset(subscriptionKeyPlainText, 0, IAS_SUBSCRIPTION_KEY_SIZE);
 
     return 1;
 }

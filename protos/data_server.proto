@@ -10,6 +10,11 @@ service DataServer {
 
     rpc StartAttestation (AttestationMsg0andMsg1) returns (AttestationMsg2) {}
     rpc CompleteAttestation (AttestationMsg3) returns (AttestationMsg4) {}
+
+    rpc GetAvailableDataSets (NoParams) returns (stream DataSetName ) {}
+
+    rpc GetDataSet (DataSetName) returns ( stream VectorElement ) {}
+
 }
 
 message HelloRequest {
@@ -24,6 +29,11 @@ message NoParams {}
 
 message VectorElement {
     bytes num = 1;
+    bytes mac = 2;
+}
+
+message DataSetName {
+    string name = 1;
 }
 
 message AttestationMsg0andMsg1 {
@@ -34,16 +44,17 @@ message AttestationMsg0andMsg1 {
 }
 
 message AttestationMsg2 {
-    bytes gb_x = 1;
-    bytes gb_y = 2;
-    bytes spid = 3;
-    uint32 quote_type = 4;
-    uint32 kdf_id = 5;
-    bytes gb_ga_x = 6;
-    bytes gb_ga_y = 7;
-    bytes mac = 8;
-    uint32 sig_rl_size = 9;
-    bytes sig_rl = 10;
+    uint32 size = 1;
+    bytes gb_x = 2;
+    bytes gb_y = 3;
+    bytes spid = 4;
+    uint32 quote_type = 5;
+    uint32 kdf_id = 6;
+    bytes gb_ga_x = 7;
+    bytes gb_ga_y = 8;
+    bytes mac = 9;
+    uint32 sig_rl_size = 10;
+    bytes sig_rl = 11;
 }
 
 message AttestationMsg3 {

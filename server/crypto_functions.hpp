@@ -84,3 +84,5 @@ void cert_stack_free(STACK_OF(X509) *chain);
 
 EVP_PKEY *key_generate();
 int derive_kdk(EVP_PKEY *Gb, unsigned char kdk[16], ec256Key g_a);
+
+EVP_PKEY *key_from_bytes (const std::string& bytes);

@@ -3,7 +3,6 @@
 typedef uint8_t GroupId[4];
 
 #define SGX_ECP256_KEY_SIZE             32
-#define SGX_ECP256_KEY_SIZE             32
 #define SGX_NISTP_ECP256_KEY_SIZE       (SGX_ECP256_KEY_SIZE/sizeof(uint32_t))
 #define SGX_MAC_SIZE                    16              /* Message Authentication Code - 16 bytes */
 

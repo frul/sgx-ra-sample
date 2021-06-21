@@ -45,7 +45,7 @@ using namespace std;
 
 /* Model these roughly after errno */
 
-typedef uint32_t ias_error_t;
+typedef int32_t ias_error_t;
 
 // We couldn't construct the query string, or the query attempt to
 // 
@@ -96,7 +96,7 @@ private:
 	Agent *c_agent;
 	string c_agent_name;
 
-	int setSubscriptionKey (SubscriptionKeyID id, char * subscriptionKey);
+	int setSubscriptionKey (SubscriptionKeyID id, const char * subscriptionKey);
 
 	SubscriptionKeyID currentKeyID = SubscriptionKeyID::Primary;
 

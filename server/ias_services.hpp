@@ -7,6 +7,8 @@
 
 using namespace json;
 
+std::set<std::string> allowed_advisories {"INTEL-SA-00334"};
+
 int get_sigrl (IAS_Connection *ias, GroupId gid,
 	char **sig_rl, uint32_t *sig_rl_size)
 {
@@ -28,23 +30,23 @@ int get_sigrl (IAS_Connection *ias, GroupId gid,
 		return 0;
 	}
  
-        ias_error_t ret = IAS_OK;
+    ias_error_t ret = IAS_OK;
 
 	while (1) {
 
 		ret =  req->sigrl(*(uint32_t *) gid, sigrlstr);
-		/*if ( debug ) {
-			printf("+++ RET = %zu\n, ret");
+		
+			printf("+++ RET = %u\n", ret);
 			printf("+++ SubscriptionKeyID = %d\n",(int)ias->getSubscriptionKeyID());
-                }*/
+            
 	
 		if ( ret == IAS_UNAUTHORIZED && (ias->getSubscriptionKeyID() == IAS_Connection::SubscriptionKeyID::Primary))
 		{
 
-		        /*if ( debug ) {
+		    
 				printf("+++ IAS Primary Subscription Key failed with IAS_UNAUTHORIZED\n");
 				printf("+++ Retrying with IAS Secondary Subscription Key\n");
-			}*/
+			
 
 			// Retry with Secondary Subscription Key
 			ias->SetSubscriptionKeyID(IAS_Connection::SubscriptionKeyID::Secondary);
@@ -52,6 +54,7 @@ int get_sigrl (IAS_Connection *ias, GroupId gid,
 		}	
 		else if (ret != IAS_OK ) {
 
+			printf("IAS return code not ok\n");
 			delete req;
 			return 0;
 		}
@@ -69,7 +72,7 @@ int get_sigrl (IAS_Connection *ias, GroupId gid,
 
 	*sig_rl_size = (uint32_t)size;
 	delete req;
-
+	printf("IAS OK and SigRL size is %d\n", *sig_rl_size);
 	return 1;
 }
 
@@ -98,141 +101,149 @@ int get_attestation_report(IAS_Connection *ias,
 	payload.insert(make_pair("isvEnclaveQuote", b64quote));
 	
 	status= req->report(payload, content, messages);
+
+	std::set<std::string> advisories;
 	if ( status == IAS_OK ) {
 		JSON reportObj = JSON::Load(content);
 
-		/*if ( verbose ) {
-			edividerWithText("Report Body");
+		if ( verbose ) {
 			printf("%s\n", content.c_str());
-			edivider();
 			if ( messages.size() ) {
-				edividerWithText("IAS Advisories");
 				for (vector<string>::const_iterator i = messages.begin();
 					i != messages.end(); ++i ) {
 
 					printf("%s\n", i->c_str());
 				}
-				edivider();
 			}
 		}
 
 		if ( verbose ) {
-			edividerWithText("IAS Report - JSON - Required Fields");
-			if ( version >= 3 ) {
-				printf("version               = %d\n",
-					reportObj["version"].ToInt());
-			}
-			printf("id:                   = %s\n",
-				reportObj["id"].ToString().c_str());
-			printf("timestamp             = %s\n",
-				reportObj["timestamp"].ToString().c_str());
-			printf("isvEnclaveQuoteStatus = %s\n",
-				reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
-			printf("isvEnclaveQuoteBody   = %s\n",
-				reportObj["isvEnclaveQuoteBody"].ToString().c_str());
-
-			edividerWithText("IAS Report - JSON - Optional Fields");
-
-			printf("platformInfoBlob  = %s\n",
-				reportObj["platformInfoBlob"].ToString().c_str());
-			printf("revocationReason  = %s\n",
-				reportObj["revocationReason"].ToString().c_str());
-			printf("pseManifestStatus = %s\n",
-				reportObj["pseManifestStatus"].ToString().c_str());
-			printf("pseManifestHash   = %s\n",
-				reportObj["pseManifestHash"].ToString().c_str());
-			printf("nonce             = %s\n",
-				reportObj["nonce"].ToString().c_str());
-			printf("epidPseudonym     = %s\n",
-				reportObj["epidPseudonym"].ToString().c_str());
-			if ( version >= 4 ) {
-				int i;
-
-				printf("advisoryURL       = %s\n",
-					reportObj["advisoryURL"].ToString().c_str());
-				printf("advisoryIDs       = ");
-				for(i= 0; i< reportObj["advisoryIDs"].length(); ++i) {
-					printf("%s%s", (i)?",":"", reportObj["advisoryIDs"][i].ToString().c_str());
+				if ( version >= 3 ) {
+					printf("version               = %lu\n",
+						reportObj["version"].ToInt());
 				}
-				printf("\n");
+				printf("id:                   = %s\n",
+					reportObj["id"].ToString().c_str());
+				printf("timestamp             = %s\n",
+					reportObj["timestamp"].ToString().c_str());
+				printf("isvEnclaveQuoteStatus = %s\n",
+					reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
+				printf("isvEnclaveQuoteBody   = %s\n",
+					reportObj["isvEnclaveQuoteBody"].ToString().c_str());
+
+
+				printf("platformInfoBlob  = %s\n",
+					reportObj["platformInfoBlob"].ToString().c_str());
+				printf("revocationReason  = %s\n",
+					reportObj["revocationReason"].ToString().c_str());
+				printf("pseManifestStatus = %s\n",
+					reportObj["pseManifestStatus"].ToString().c_str());
+				printf("pseManifestHash   = %s\n",
+					reportObj["pseManifestHash"].ToString().c_str());
+				printf("nonce             = %s\n",
+					reportObj["nonce"].ToString().c_str());
+				printf("epidPseudonym     = %s\n",
+					reportObj["epidPseudonym"].ToString().c_str());
+				if ( version >= 4 ) {
+					int i;
+
+					printf("advisoryURL       = %s\n",
+						reportObj["advisoryURL"].ToString().c_str());
+					printf("advisoryIDs       = ");
+					for(i= 0; i< reportObj["advisoryIDs"].length(); ++i) {
+						printf("%s%s", (i)?",":"", reportObj["advisoryIDs"][i].ToString().c_str());
+					}
+					printf("\n");
+				}
+		}
+
+		/*
+		* If the report returned a version number (API v3 and above), make
+		* sure it matches the API version we used to fetch the report.
+		*
+		* For API v3 and up, this field MUST be in the report.
+		*/
+
+		if ( reportObj.hasKey("version") ) {
+			unsigned int rversion= (unsigned int) reportObj["version"].ToInt();
+			if ( verbose )
+				printf("+++ Verifying report version against API version\n");
+			if ( version != rversion ) {
+				printf("Report version %u does not match API version %u\n",
+					rversion , version);
+				delete req;
+				return 0;
 			}
-			edivider();
-		}*/
-
-    /*
-     * If the report returned a version number (API v3 and above), make
-     * sure it matches the API version we used to fetch the report.
-	 *
-	 * For API v3 and up, this field MUST be in the report.
-     */
-
-	if ( reportObj.hasKey("version") ) {
-		unsigned int rversion= (unsigned int) reportObj["version"].ToInt();
-		if ( verbose )
-			printf("+++ Verifying report version against API version\n");
-		if ( version != rversion ) {
-			printf("Report version %u does not match API version %u\n",
-				rversion , version);
+		} else if ( version >= 3 ) {
+			printf("attestation report version required for API version >= 3\n");
 			delete req;
 			return 0;
 		}
-	} else if ( version >= 3 ) {
-		printf("attestation report version required for API version >= 3\n");
-		delete req;
-		return 0;
-	}
 
-	/*
-	 * This sample's attestion policy is based on isvEnclaveQuoteStatus:
-	 * 
-	 *   1) if "OK" then return "Trusted"
-	 *
- 	 *   2) if "CONFIGURATION_NEEDED", "SW_HARDENING_NEEDED", or
-	 *      "CONFIGURATION_AND_SW_HARDENING_NEEDED", then return
-	        "NotTrusted_ItsComplicated" when in --strict-trust-mode
-	         and "Trusted_ItsComplicated" otherwise
-	 *
-	 *   3) return "NotTrusted" for all other responses
-	 *
-	 * In case #2, this is ultimatly a policy decision. Do you want to
-	 * trust a client that is running with a configuration that weakens
-	 * its security posture? Even if you ultimately choose to trust the
-	 * client, the "Trusted_ItsComplicated" response is intended to 
-	 * tell the client "I'll trust you (for now), but inform the user
-	 * that I may not trust them in the future unless they take some 
-	 * action". A real service would provide some guidance to the
-	 * end user based on the advisory URLs and advisory IDs.
- 	 */
+		/*
+		* This sample's attestion policy is based on isvEnclaveQuoteStatus:
+		* 
+		*   1) if "OK" then return "Trusted"
+		*
+		*   2) if "CONFIGURATION_NEEDED", "SW_HARDENING_NEEDED", or
+		*      "CONFIGURATION_AND_SW_HARDENING_NEEDED", then return
+				"NotTrusted_ItsComplicated" when in --strict-trust-mode
+				and "Trusted_ItsComplicated" otherwise
+		*
+		*   3) return "NotTrusted" for all other responses
+		*
+		* In case #2, this is ultimatly a policy decision. Do you want to
+		* trust a client that is running with a configuration that weakens
+		* its security posture? Even if you ultimately choose to trust the
+		* client, the "Trusted_ItsComplicated" response is intended to 
+		* tell the client "I'll trust you (for now), but inform the user
+		* that I may not trust them in the future unless they take some 
+		* action". A real service would provide some guidance to the
+		* end user based on the advisory URLs and advisory IDs.
+		*/
 
-	/*
-	 * Simply check to see if status is OK, else enclave considered 
-	 * not trusted
-	 */
+		/*
+		* Simply check to see if status is OK, else enclave considered 
+		* not trusted
+		*/
 
-	//if ( verbose ) edividerWithText("ISV Enclave Trust Status");
+		//if ( verbose ) edividerWithText("ISV Enclave Trust Status");
+		for(int i = 0; i< reportObj["advisoryIDs"].length(); ++i) {
+			advisories.insert(reportObj["advisoryIDs"][i].ToString());
+		}
 
-	if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("OK"))) {
-		*trusted = true;
-		if ( verbose ) printf("Enclave TRUSTED\n");
-	} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("CONFIGURATION_NEEDED"))) {
-		if ( strict_trust ) {
+		std::set<std::string> dissalowed_advisories;
+		std::set_difference(advisories.begin(), advisories.end(),
+			allowed_advisories.begin(), allowed_advisories.end(),
+			std::inserter(dissalowed_advisories, dissalowed_advisories.begin()));
+
+		if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("OK"))) {
+			*trusted = true;
+			if ( verbose ) printf("Enclave TRUSTED\n");
+		} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("CONFIGURATION_NEEDED"))) {
+			if ( strict_trust ) {
+				*trusted = true;
+				if ( verbose ) printf("Enclave NOT TRUSTED and COMPLICATED - Reason: %s\n",
+					reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
+			} else {
+				if ( verbose ) printf("Enclave TRUSTED and COMPLICATED - Reason: %s\n",
+					reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
+				*trusted = true;
+			}
+		} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("GROUP_OUT_OF_DATE"))) {
 			*trusted = true;
 			if ( verbose ) printf("Enclave NOT TRUSTED and COMPLICATED - Reason: %s\n",
 				reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
 		} else {
-			if ( verbose ) printf("Enclave TRUSTED and COMPLICATED - Reason: %s\n",
+			*trusted = false;
+			if ( verbose ) printf("Enclave NOT TRUSTED - Reason: %s\n",
 				reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
-			*trusted = true;
+			if (reportObj["isvEnclaveQuoteStatus"].ToString() == "SW_HARDENING_NEEDED") {
+				if (dissalowed_advisories.empty()) {
+					*trusted = true;
+				}
+			}
 		}
-	} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("GROUP_OUT_OF_DATE"))) {
-		*trusted = true;
-		if ( verbose ) printf("Enclave NOT TRUSTED and COMPLICATED - Reason: %s\n",
-			reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
-	} else {
-		*trusted = false;
-		if ( verbose ) printf("Enclave NOT TRUSTED - Reason: %s\n",
-			reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
-	}
 
 		delete req;
 		return 1;
@@ -280,8 +291,6 @@ int get_attestation_report(IAS_Connection *ias,
 
 sgx_measurement_t my_mr_signer;
 static int _init= 0;
-
-extern int verbose;
 
 int verify_enclave_identity(sgx_prod_id_t req_isv_product_id, sgx_isv_svn_t min_isvsvn,
 	int allow_debug, sgx_report_body_t *report)

@@ -27,18 +27,21 @@ using data_exchange::HelloReply;
 using data_exchange::DataServer;
 using data_exchange::NoParams;
 using data_exchange::VectorElement;
+using data_exchange::DataSetName;
 
 sgx_enclave_id_t global_eid = 0;
 
-int ReduceVector(const std::vector<std::string>& vec) {
-    int result = 0;
-    unsigned char *key = getPublicKey();
-    unsigned char *iv = (unsigned char *)"0123456789012345";
-    unsigned char decryptedtext[128];
-    for (auto e: vec) {     
-        result += decrypt_message((unsigned char*)e.c_str());
-    }
-    return result;
+void ocall_print_string(const char *str)
+{
+    /* Proxy/Bridge will check the length and null-terminate 
+     * the input string to prevent buffer overflow. 
+     */
+    //print_hexstring(str, 16);
+    printf("%s\n", str);
+}
+
+void ocall_print_number(int num) {
+    std::cout << "print number from enclave " << num << std::endl;
 }
 
 int initialize_enclave(sgx_enclave_id_t* eid, const std::string& launch_token_path, const std::string& enclave_name) {
@@ -70,6 +73,7 @@ int initialize_enclave(sgx_enclave_id_t* eid, const std::string& launch_token_pa
     ret = sgx_create_enclave(enclave_name.c_str(), SGX_DEBUG_FLAG, &token, &updated, eid, NULL);
     if (ret != SGX_SUCCESS) {
         if (fp != NULL) fclose(fp);
+        printf("sgx_create_enclave failed");
         return -1;
     }
 
@@ -139,38 +143,75 @@ public:
         return "RPC failed";
     }
 
-    void PrintScore() {
+    void PrintScore(const std::string& name) {
         ClientContext context;
-        NoParams no_params;
+        DataSetName dataSetName;
+        dataSetName.set_name(name);
         std::unique_ptr<ClientReader<VectorElement> > reader(
-            stub_->GetVector(&context, no_params));
-        std::vector<std::string> received_vector;
+            stub_->GetDataSet(&context, dataSetName));
+        std::vector<std::string> received_vector_str;
+        std::vector<std::string> received_vector_mac;
         VectorElement element;
         while (reader->Read(&element)) {
-            received_vector.push_back(element.num());
+            received_vector_str.push_back(element.num());
+            received_vector_mac.push_back(element.mac());
         }
         Status status = reader->Finish();
-        if (status.ok()) {
-            std::cout << "GetVecor succeeded." << std::endl;
-        } else {
+        if (!status.ok()) {
             std::cout << "GetVector failed." << std::endl;
         }
 
-        char** array_to_pass = new char*[received_vector.size()];
-        for (int i = 0; i < received_vector.size(); ++i) {
-            std::string e = received_vector[i];
-            array_to_pass[i] = new char[e.length() + 1];
-            strcpy(array_to_pass[i], e.c_str()); 
+        sgx_status_t sgx_status;
+        sgx_status = ecall_start_scoring(global_eid);
+        if (sgx_status != SGX_SUCCESS) {
+            std::cout << "ecall_start_scoring failed with error: " << sgx_status;
         }
 
-        int score;
-        ecall_compute_score(global_eid, &score, array_to_pass, received_vector.size());
+        for (int i = 0; i < received_vector_str.size(); ++i) {
+            std::string encrypted = received_vector_str[i];
+            std::string mac = received_vector_mac[i];
+
+            uint8_t *encrypted_arr = new uint8_t[encrypted.length()];
+            memcpy(encrypted_arr, encrypted.c_str(), encrypted.length());
+
+            uint8_t *mac_arr = new uint8_t[16];
+            memcpy(mac_arr, mac.c_str(), 16);
+
+            sgx_status = ecall_score_element(global_eid, encrypted_arr, encrypted.length(), mac_arr, 16);
+            if (sgx_status != SGX_SUCCESS) {
+                std::cout << "ecall_score_element failed with error: " << sgx_status;
+            }
+        }
+
+        int score = 420;
+        sgx_status = ecall_receive_score(global_eid, &score);
+        if (sgx_status != SGX_SUCCESS) {
+            std::cout << "ecall_receive_score failded with error: " << sgx_status;
+        }
         std::cout << "Reduced vector result: " << score << std::endl;
     }
 
+    void PrintAvailableDataSets() {
+        ClientContext context;
+        NoParams no_params;
+        std::unique_ptr<ClientReader<DataSetName> > reader(
+            stub_->GetAvailableDataSets(&context, no_params));
+        DataSetName element;
+        while (reader->Read(&element)) {
+            std::string nm = element.name();
+            std::cout << nm << std::endl;
+        }
+
+        Status status = reader->Finish();
+        if (!status.ok()) {
+            std::cout << "GetAvailableDataSets failed." << std::endl;
+        }
+    }
+
     int init() {
-        if (initialize_enclave(&global_eid, "enclave.token", "enclave.signed.so") < 0) {
-            std::cout << "Fail to initialize enclave." << std::endl;
+        int ret = initialize_enclave(&global_eid, "enclave.token", "enclave.signed.so");
+        if (ret < 0) {
+            std::cout << "Failed to initialize enclave" << std::endl;
             return -1;
         }
         return 0;
@@ -207,30 +248,61 @@ public:
         {
             data_exchange::AttestationMsg0andMsg1 server_msg01;
             server_msg01.set_extended_epid_group_id(msg0_extended_epid_group_id);
-            server_msg01.set_ga_x((char*)msg1.g_a.gx);
-            server_msg01.set_ga_y((char*)msg1.g_a.gy);
-            server_msg01.set_gid((char*)msg1.gid);
+
+            {
+                std::string ga_x_to_send;
+                convertCharArrayToBytes(msg1.g_a.gx, SGX_ECP256_KEY_SIZE, ga_x_to_send);
+                
+                server_msg01.set_ga_x(ga_x_to_send);
+                //print_hexstring(msg1.g_a.gx, SGX_ECP256_KEY_SIZE);
+                //std::cout << "GAX: " << msg1.g_a.gx << std::endl;
+                //std::cout << "GAX string: " << server_msg01.ga_x() << "LENL " << server_msg01.ga_x().length() << std::endl;
+
+            }
+            
+            {
+                std::string ga_y_to_send;
+                convertCharArrayToBytes(msg1.g_a.gy, SGX_ECP256_KEY_SIZE, ga_y_to_send);
+                server_msg01.set_ga_y(ga_y_to_send);
+            }
+
+            {
+                std::string gid_to_send;
+                print_hexstring(msg1.gid, 4);
+                convertCharArrayToBytes(msg1.gid, 4, gid_to_send);
+                server_msg01.set_gid(gid_to_send);
+            }
+
             ClientContext context;
             Status status = stub_->StartAttestation(&context, server_msg01, &server_msg2);
+            if (status.ok()) {
+                std::cout << "msg2 from the server received succesfully" << std::endl;
+            } 
+            else {
+                std::stringstream ss;
+                ss << status.error_code() << ": " << status.error_message();
+                throw std::runtime_error(ss.str());
+            }
         }
 
-        sgx_ra_msg2_t *msg2 = new sgx_ra_msg2_t();
-        strcpy((char*)msg2->g_b.gx, server_msg2.gb_x().c_str());
-        strcpy((char*)msg2->g_b.gy, server_msg2.gb_y().c_str());
-        strcpy((char*)msg2->spid.id, server_msg2.spid().c_str());
+        uint32_t msg2_size = server_msg2.size();
+        sgx_ra_msg2_t *msg2 = (sgx_ra_msg2_t*)malloc(msg2_size);
+        memcpy(msg2->g_b.gx, server_msg2.gb_x().c_str(), SGX_ECP256_KEY_SIZE);
+        memcpy(msg2->g_b.gy, server_msg2.gb_y().c_str(), SGX_ECP256_KEY_SIZE);
+        memcpy(msg2->spid.id, server_msg2.spid().c_str(), 16);
         msg2->quote_type = server_msg2.quote_type();
         msg2->kdf_id = server_msg2.kdf_id();
-        /*strcpy((char*)msg2->g_b.gx, server_msg2.gb_x().c_str());
-        strcpy((char*)msg2->g_b.gx, server_msg2.gb_x().c_str());*/
-        strcpy((char*)msg2->mac, server_msg2.mac().c_str());
+        memcpy(msg2->sign_gb_ga.x, server_msg2.gb_ga_x().c_str(), SGX_NISTP_ECP256_KEY_SIZE * sizeof(uint32_t));
+        memcpy(msg2->sign_gb_ga.y, server_msg2.gb_ga_y().c_str(), SGX_NISTP_ECP256_KEY_SIZE * sizeof(uint32_t));
+        memcpy(msg2->mac, server_msg2.mac().c_str(), SGX_MAC_SIZE);
         msg2->sig_rl_size = server_msg2.sig_rl_size();
-        strncpy((char*)msg2->sig_rl, server_msg2.sig_rl().c_str(), msg2->sig_rl_size);
+        memcpy(msg2->sig_rl, server_msg2.sig_rl().c_str(), msg2->sig_rl_size);
 
 	    sgx_ra_msg3_t *msg3 = NULL;
         uint32_t msg3_sz;
-        status = sgx_ra_proc_msg2(ra_ctx, global_eid, sgx_ra_proc_msg2_trusted, sgx_ra_get_msg3_trusted, msg2, 
-		    sizeof(sgx_ra_msg2_t) + msg2->sig_rl_size, &msg3, &msg3_sz);
-
+        ra_ctx = 0x0;
+        status = sgx_ra_proc_msg2(ra_ctx, global_eid, sgx_ra_proc_msg2_trusted, sgx_ra_get_msg3_trusted, msg2, msg2_size, &msg3, &msg3_sz);
+        free(msg2);
         if ( status != SGX_SUCCESS ) {
             std::stringstream ss;
             ss << "sgx_ra_proc_msg2: " << std::hex << status;
@@ -284,18 +356,21 @@ public:
                 server_msg3.set_quote(quote_as_string);
             }
 
-            
             ClientContext context;
             Status status = stub_->CompleteAttestation(&context, server_msg3, &server_msg4);
+            if (status.ok()) {
+                std::cout << "msg4 from the server received succesfully" << std::endl;
+            } 
+            else {
+                std::stringstream ss;
+                ss << status.error_code() << ": " << status.error_message();
+                throw std::runtime_error(ss.str());
+            }
             return server_msg4.ok();
         }     
 
         return false;
     }
-
-
-    void getList() {}
-    void getData() {}
 
 private:
     std::unique_ptr<DataServer::Stub> stub_;
@@ -326,29 +401,83 @@ void InterativeGRPC() {
         std::cout << "gRPC returned: " << std::endl;
         std::cout << reply << std::endl;*/
 
-    if(!dataServerClient.init()) {
+    if(dataServerClient.init() != 0) {
         std::cout << "Failed to initialize the enclave" << std::endl;
     }
+
+    int rand;
+    generate_random_number(global_eid, &rand);
+    std::cout << "Random number: " << rand << std::endl;
 
     bool attested = false;
     try {
         attested = dataServerClient.attest();
     }
     catch (const std::exception& e) {
-        std::cout << "attestation failed with: " << e.what();
+        std::cout << "attestation failed with: " << e.what() << std::endl;
+        return;
     }
 
     if (!attested) {
         std::cout << "Enclave is not trusted. Exiting" << std::endl;
+        return;
     }
 
-    try {
-        dataServerClient.PrintScore();
-    }
-    catch (const std::exception& e) {
-        std::cout << "PrintScore failed with: " << e.what();
-    }
+    /*{
+        sgx_status_t key_status, sha_status;
+		sgx_sha256_hash_t mkhash;
+        sgx_ra_context_t ra_ctx = 0x0;
+        sgx_status_t status;
+		// First the MK
 
+		status= enclave_ra_get_key_hash(global_eid, &sha_status, &key_status, ra_ctx,
+			SGX_RA_KEY_MK, &mkhash);
+		printf("+++ ECALL enclage_ra_get_key_hash (MK) ret= 0x%04x\n",
+			status);
+
+		printf("+++ sgx_ra_get_keys (MK) ret= 0x%04x\n", key_status);
+
+        printf("SHA256(MK) = ");
+        print_hexstring(mkhash, sizeof(mkhash));
+        printf("\n");
+		
+    }*/
+
+    std::cout << "Enclave is trusted" << std::endl;
+
+    while(1) {
+        std::cout << "Select command" << std::endl;
+        std::cout << "1. Get list of datasets" << std::endl;
+        std::cout << "2. Get dataset score by name" << std::endl;
+        std::cout << "3. exit" << std::endl;
+
+        int command;
+        std::cin >> command;
+
+        switch (command) {
+            case 1: {
+                dataServerClient.PrintAvailableDataSets();
+                break;
+            }
+            case 2: {
+                std::string name;
+                std::cin >> name;
+                try {
+                    dataServerClient.PrintScore(name);
+                }
+                catch (const std::exception& e) {
+                    std::cout << "PrintScore failed with: " << e.what();
+                }
+                break;
+            }
+            case 3: {
+                goto exit;
+            }
+        }
+        
+    }
+    
+    exit: std::cout << "Goobbye" << std::endl;
 }
 
 

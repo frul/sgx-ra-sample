@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 project(gRPC_Examples VERSION 0.0.1)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
@@ -21,6 +21,8 @@ endif()
 # Looks for gRPCConfig.cmake file installed by gRPC's cmake installation.
 find_package(gRPC CONFIG REQUIRED)
 message(STATUS "Using gRPC ${gRPC_VERSION}")
+
+set(gRPC_SSL_PROVIDER package)
 
 
 find_package(OpenSSL REQUIRED)

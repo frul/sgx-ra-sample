@@ -8,7 +8,19 @@ enclave {
 
     trusted {
         public int generate_random_number(void);
-        public int ecall_compute_score([in, size=len] char **arr, size_t len);
+        public void ecall_score_element([in, size=len] uint8_t *arr, size_t len, [in, size=mac_len] uint8_t *mac, size_t mac_len); //[in, count=len]
         public sgx_status_t ecall_initialize_ra([out] sgx_ra_context_t *ctx);
+
+        public sgx_status_t enclave_ra_get_key_hash(
+			[out] sgx_status_t *get_keys_status, sgx_ra_context_t ctx,
+			sgx_ra_key_type_t type, [out] sgx_sha256_hash_t *hash);
+
+        public void ecall_start_scoring(void);
+        public int ecall_receive_score(void);
+    };
+
+    untrusted {
+        void ocall_print_string([in, string] const char *str);
+        void ocall_print_number(int num);
     };
 };

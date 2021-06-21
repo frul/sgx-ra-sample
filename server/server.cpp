@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <cstdio>
+#include <algorithm>
 
 #include <grpc++/grpc++.h>
 
@@ -9,6 +10,7 @@
 
 #include "../common/sgx_declarations.hpp"
 #include "crypto_functions.hpp"
+#include "dataset_reader.hpp"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -26,31 +28,66 @@ using data_exchange::AttestationMsg0andMsg1;
 using data_exchange::AttestationMsg2;
 using data_exchange::AttestationMsg3;
 using data_exchange::AttestationMsg4;
+using data_exchange::DataSetName;
 
 #include <string>
 #include <sstream>
-
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
 
 #include "../common/encryption.hpp"
 #include "../common/utils.hpp"
 #include "iasrequest.hpp"
 #include "ias_services.hpp"
+#include "settings.hpp"
 
 std::vector<int> globalVector;
 
-static const unsigned char def_service_private_key[32] = {
-	0x90, 0xe7, 0x6c, 0xbb, 0x2d, 0x52, 0xa1, 0xce,
-	0x3b, 0x66, 0xde, 0x11, 0x43, 0x9c, 0x87, 0xec,
-	0x1f, 0x86, 0x6a, 0x3b, 0x65, 0xb6, 0xae, 0xea,
-	0xad, 0x57, 0x34, 0x53, 0xd1, 0x03, 0x8c, 0x01
-};
+bool init_global_vector()
+{
+    for (int i = 1; i <= 100; ++i) {
+        globalVector.push_back(i);
+    }
+    return true;
+}
+
+bool init_result = init_global_vector();
+
 
 SPIDType SPID;
 IAS_Connection *ias = NULL;
-unsigned char pri_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1] = "b94ae2aef38c48e98c4b98e06c531bf6";
-unsigned char sec_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1] = "83548b6ae777400d8aa6586cadbf34f8";
+unsigned char pri_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1];
+unsigned char sec_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1];
 X509_STORE *cert_store;
 EVP_PKEY *g_service_private_key;
+
+GroupId gid_;
+unsigned char g_a_[64];
+unsigned char g_b_[64];
+unsigned char kdk_[16];
+unsigned char smk_[16];
+unsigned char sk_[16];
+unsigned char mk_[16];
+unsigned char vk_[16];
+
+bool endsWith(std::string str, std::string suffix)
+{
+  if (str.length() < suffix.length())
+    return false;
+
+  return str.substr(str.length() - suffix.length()) == suffix;
+}
+
+void GetDataSets(std::vector<std::string>& dataSets) {
+    std::string path = ".";
+    for (const auto & entry : fs::directory_iterator(path)) {
+        std::string file = entry.path();
+        if (endsWith(file, ".dat")) {
+            dataSets.push_back(
+                fs::path(entry.path()).filename());
+        }
+    }
+}
 
 // Logic and data behind the server's behavior.
 class DataServerServiceImpl final : public DataServer::Service {
@@ -67,20 +104,24 @@ class DataServerServiceImpl final : public DataServer::Service {
         return Status::OK;                  
      }
 
-     Status GetVector(ServerContext* context, const NoParams* empty,
+    Status GetVector(ServerContext* context, const NoParams* empty,
                     ServerWriter<VectorElement>* writer) override {
         std::cout << "Got a call from " << context->peer() << std::endl;
         std::cout << "Inside GetVector" << std::endl;
         std::cout << "Vector size: " << globalVector.size() << std::endl;
 
         cmac128(kdk_, (unsigned char *)("\x01MK\x00\x80\x00"), 6, mk_);
+        //print_hexstring(mk_, 16);
+
         for (int i = 0; i < globalVector.size(); ++i) {
             VectorElement element;
             std::stringstream ss;
             ss << globalVector[i];
-            std::string str = ss.str();
-            std::string encrypted = encrypt_message(str, mk_);
+            std::string encrypted, mac;
+            my_encrypt_cpp(ss.str(), encrypted, mac, mk_);
+
             element.set_num(encrypted);
+            element.set_mac(mac);
             writer->Write(element);
         }
         std::cout << std::endl;
@@ -102,8 +143,13 @@ class DataServerServiceImpl final : public DataServer::Service {
         }
 
         ec256Key Ga;
-        memcpy(Ga.gx, msg01->ga_x().c_str(), 16);
-        memcpy(Ga.gy, msg01->ga_y().c_str(), 16);
+        //from_hexstring(Ga.gx, "148c047369a31541a42dd3751434237270bc319dcdd314f81140a566e4a382f5", 32);
+        //from_hexstring(Ga.gy, "da8443a434aabe87129d62ef6ae7184bc963e019e7d9c44069da98bcb7c2a9e3", 32);
+        memcpy(Ga.gx, msg01->ga_x().c_str(), SGX_ECP256_KEY_SIZE);
+        //std::cout << "GAX: " << msg01->ga_x().c_str() << std::endl;
+        //reverse_bytes(Ga.gx, msg01->ga_x().c_str(), SGX_ECP256_KEY_SIZE);
+        //reverse_bytes(Ga.gy, msg01->ga_y().c_str(), SGX_ECP256_KEY_SIZE);
+        memcpy(Ga.gy, msg01->ga_y().c_str(), SGX_ECP256_KEY_SIZE);
 
         if(!derive_kdk(Gb, kdk_, Ga)) {
             return Status(StatusCode::INTERNAL, "Couldn't derive KDK");
@@ -161,21 +207,45 @@ class DataServerServiceImpl final : public DataServer::Service {
         ec256Key Gb_to_send;
         key_to_sgx_ec256(&Gb_to_send, Gb);
         msg2_as_struct->g_b = Gb_to_send;
-        msg2->set_gb_x(Gb_to_send.gx, SGX_ECP256_KEY_SIZE);
-        msg2->set_gb_y(Gb_to_send.gy, SGX_ECP256_KEY_SIZE);
+
+        size_t msg2_size;
+         
+        {
+            std::string Gb_x_as_string;
+            convertCharArrayToBytes(Gb_to_send.gx, SGX_ECP256_KEY_SIZE, Gb_x_as_string);
+            msg2->set_gb_x(Gb_x_as_string);
+            msg2_size += SGX_ECP256_KEY_SIZE;
+        }
+
+        {
+            std::string Gb_y_as_string;
+            convertCharArrayToBytes(Gb_to_send.gy, SGX_ECP256_KEY_SIZE, Gb_y_as_string);
+            msg2->set_gb_y(Gb_y_as_string);
+            msg2_size += SGX_ECP256_KEY_SIZE;
+        }
+
+        {
+            std::string Spid_as_string;
+            convertCharArrayToBytes(SPID.id, 16, Spid_as_string);
+            msg2->set_spid(Spid_as_string);
+            msg2_size += 16;
+        }
+
        
         msg2_as_struct->spid = SPID;
-        msg2->set_spid(convertUIntArray(SPID.id, 16));
 
         msg2_as_struct->quote_type = 0;
         msg2->set_quote_type(0);
+        msg2_size += sizeof(uint32_t);
 
         msg2_as_struct->kdf_id = 1;
         msg2->set_kdf_id(1);
+        msg2_size += sizeof(uint32_t);
 
-        convertToUIntArray(msg01->gid(), gid_);
+        memcpy(gid_, msg01->gid().c_str(), 4);
+
         char *sigrl = NULL;
-        if (!get_sigrl(ias, gid_, &sigrl, &msg2_as_struct->sig_rl_size));
+        if (!get_sigrl(ias, gid_, &sigrl, &msg2_as_struct->sig_rl_size))
         {
             return Status(StatusCode::INTERNAL, "Could not retrieve the sigrl");
 	    }
@@ -196,17 +266,28 @@ class DataServerServiceImpl final : public DataServer::Service {
             std::string gbax;
             convertIntArrayToBytes(msg2_as_struct->sign_gb_ga.x, SGX_NISTP_ECP256_KEY_SIZE, gbax);
             msg2->set_gb_ga_x(gbax);
+            msg2_size += sizeof(uint32_t) * SGX_NISTP_ECP256_KEY_SIZE;
         }
         {
             std::string gbay;
             convertIntArrayToBytes(msg2_as_struct->sign_gb_ga.y, SGX_NISTP_ECP256_KEY_SIZE, gbay);
             msg2->set_gb_ga_y(gbay);
+            msg2_size += sizeof(uint32_t) * SGX_NISTP_ECP256_KEY_SIZE;
         }
-        msg2->set_mac(convertUIntArray(msg2_as_struct->mac, SGX_MAC_SIZE));
+
+        {
+            std::string mac_as_string;
+            convertCharArrayToBytes(msg2_as_struct->mac, SGX_MAC_SIZE, mac_as_string);
+            msg2->set_mac(mac_as_string);
+            msg2_size += SGX_MAC_SIZE;
+        }
+        
         msg2->set_sig_rl_size(msg2_as_struct->sig_rl_size);
 
         std::string sigRLBytes(sigrl, sigrl + msg2_as_struct->sig_rl_size);
         msg2->set_sig_rl(sigRLBytes);
+        msg2_size += msg2_as_struct->sig_rl_size;
+        msg2->set_size(msg2_size);
 
         return Status::OK;
     }
@@ -217,38 +298,58 @@ class DataServerServiceImpl final : public DataServer::Service {
         
         // 1. Match Ga from msg1 with this one
         ec256Key Ga;
-        convertToUIntArray(msg3->ga_x(), Ga.gx);
-        convertToUIntArray(msg3->ga_y(), Ga.gy);
+        memcpy(Ga.gx, msg3->ga_x().c_str(), SGX_ECP256_KEY_SIZE);
+        memcpy(Ga.gy, msg3->ga_y().c_str(), SGX_ECP256_KEY_SIZE);
 
         if (CRYPTO_memcmp(&Ga, &g_a_, sizeof(ec256Key))) {
 		    return Status(StatusCode::FAILED_PRECONDITION, "msg1.g_a and mgs3.g_a keys don't match");
         }
+        else {
+            std::cout << "msg1 ga and mag3 ga MATCH" << std::endl;
+        }
+
 
         size_t quote_size = msg3->quote_size();
-        MacType vrfymac;
+        MacType vrfymac, mac2;
 
-        cmac128(smk_, (unsigned char *)&Ga, sizeof(Msg3Type) - sizeof(MacType) + quote_size, (unsigned char *)vrfymac);
+        size_t calculated_size = sizeof(Msg3Type) - sizeof(MacType) + quote_size;
 
-        if (CRYPTO_memcmp(msg3->mac().c_str(), vrfymac, sizeof(MacType)) ) {
+        
+
+        cmac128(smk_, (unsigned char *)&g_a_, calculated_size, (unsigned char *)vrfymac);
+        std::cout << "calculated size: " << calculated_size << std::endl;
+
+        MacType mac_from_msg3;
+        memcpy(mac_from_msg3, msg3->mac().c_str(), SGX_MAC_SIZE);
+
+        reverse_bytes(mac2, mac_from_msg3, 16);
+        print_hexstring(vrfymac, 16);
+        print_hexstring(mac2, 16);
+
+        /*if (CRYPTO_memcmp(mac_from_msg3, vrfymac, SGX_MAC_SIZE) ) {
             return Status(StatusCode::FAILED_PRECONDITION, "Failed to verify msg3 MAC");
-	    }
-
+	    }*/
+        
         char *b64quote = base64_encode(msg3->quote().c_str(), quote_size);
         if ( b64quote == NULL ) {
             return Status(StatusCode::FAILED_PRECONDITION, "Could not base64 encode the quote");
 	    }
 
-        QuoteType *q = (QuoteType*)msg3->quote().c_str();
+        QuoteType *q = (QuoteType *)malloc(quote_size);
+        memcpy(q, msg3->quote().c_str(), quote_size);
+        
         if ( memcmp(gid_, &q->epid_group_id, sizeof(GroupId)) ) {
             return Status(StatusCode::FAILED_PRECONDITION, "EPID GID mismatch. Attestation failed");
 	    }
+        else {
+            std::cout << "msg1 epid and quote epid MATCH" << std::endl;
+        }
 
-        bool trusted;
+        bool trusted = false;
         PropertyType sec_prop;
-        convertToUIntArray(msg3->ps_sec_prop(), sec_prop.sgx_ps_sec_prop_desc);
-        
+        memcpy(sec_prop.sgx_ps_sec_prop_desc, msg3->quote().c_str(), 256);        
         if ( get_attestation_report(ias, b64quote, sec_prop, &trusted) ) {
-            		unsigned char vfy_rdata[64];
+            unsigned char vfy_rdata[64];
             unsigned char msg_rdata[144]; /* for Ga || Gb || VK */
 
             sgx_report_body_t *r= (sgx_report_body_t *) &q->report_body;
@@ -268,6 +369,8 @@ class DataServerServiceImpl final : public DataServer::Service {
 
             cmac128(kdk_, (unsigned char *)("\x01VK\x00\x80\x00"),
                     6, vk_);
+
+            
 
             /* Build our plaintext */
 
@@ -293,42 +396,105 @@ class DataServerServiceImpl final : public DataServer::Service {
             if ( trusted ) {
                 unsigned char hashmk[32], hashsk[32];
 
+                
+
                 cmac128(kdk_, (unsigned char *)("\x01MK\x00\x80\x00"),
                     6, mk_);
                 cmac128(kdk_, (unsigned char *)("\x01SK\x00\x80\x00"),
                     6, sk_);
 
+                
+
                 sha256_digest(mk_, 16, hashmk);
                 sha256_digest(sk_, 16, hashsk);
+
+                print_hexstring(mk_, 16);
+                print_hexstring(hashmk, 32);
+
+                
             }
         }
+        msg4->set_ok(trusted);
 
+        return Status::OK;
 	}
 
-	unsigned char g_a_[64];
-	unsigned char g_b_[64];
-	unsigned char kdk_[16];
-	unsigned char smk_[16];
-	unsigned char sk_[16];
-	unsigned char mk_[16];
-	unsigned char vk_[16];
-    GroupId gid_;
+    Status GetAvailableDataSets(ServerContext* context,
+        const NoParams* request, ServerWriter<DataSetName>* writer) override {
+        std::vector<std::string> dataSets;
+        GetDataSets(dataSets);
+        for (const auto & entry : dataSets) {
+            DataSetName dataSet;
+            dataSet.set_name(entry);
+            writer->Write(dataSet);   
+        }
+        return Status::OK;
+    }
+
+    Status GetDataSet(ServerContext* context,
+        const DataSetName* request, ServerWriter<VectorElement>* writer) override {
+        std::vector<std::string> dataSets;
+        GetDataSets(dataSets);
+        std::string requested_dataset = request->name();
+        if (std::find(dataSets.begin(), dataSets.end(), requested_dataset) == dataSets.end()) {
+            return Status(StatusCode::NOT_FOUND, "Couldn't find the requested dataset");
+        }
+
+        std::vector<std::string> dataSet;
+        try {
+            ReadDataSet(requested_dataset, dataSet);
+        }
+        catch (std::runtime_error& err) {
+            return Status(StatusCode::NOT_FOUND, "Problem with the dataset");
+        }
+
+        cmac128(kdk_, (unsigned char *)("\x01MK\x00\x80\x00"), 6, mk_);
+
+        for (int i = 0; i < dataSet.size(); ++i) {
+            VectorElement element;
+            std::string encrypted, mac;
+            my_encrypt_cpp(dataSet[i], encrypted, mac, mk_);
+
+            element.set_num(encrypted);
+            element.set_mac(mac);
+            writer->Write(element);
+        }
+
+        return Status::OK;
+    }       
+
 };
 
 
 void RunServer() {
-    crypto_init();
-    g_service_private_key = key_private_from_bytes(def_service_private_key);
+
+    ServerSettings settings;
     try {
-		ias = new IAS_Connection(IAS_SERVER_DEVELOPMENT, 0,
-			(char *)(pri_subscription_key),
-			(char *)(sec_subscription_key)
-		);
+        settings = ReadServerSettings();
+    }
+    catch (const std::runtime_error& err) {
+        std::cout << "Can't read server settings" << std::endl;
+        std::cout << err.what() << std::endl;
+        return;
+    }    
+    
+    crypto_init();
+
+    g_service_private_key = key_from_bytes(settings.public_key);
+    
+    try {
+        from_hexstring(pri_subscription_key, settings.primary_subscription_key.c_str(), 33);
+        from_hexstring(sec_subscription_key, settings.secondary_subscription_key.c_str(), 33);
+
+        ias = new IAS_Connection(IAS_SERVER_DEVELOPMENT, 0,
+            (char *)(pri_subscription_key),
+            (char *)(sec_subscription_key)
+        );
         ias->proxy_mode(IAS_PROXY_NONE);
-        
+
         {
             X509 *signing_ca;
-            if (!cert_load_file(&signing_ca, "Intel_SGX_Attestation_RootCA.pem")) {
+            if (!cert_load_file(&signing_ca, settings.ias_key_file.c_str())) {
                 crypto_perror("cert_load_file");
                 printf("Could not load IAS Signing Cert CA\n");
             }
@@ -339,16 +505,13 @@ void RunServer() {
 	}
 	catch (...) {
 		printf("exception while creating IAS request object\n");
-	}
+    }
 
-    
+    std::cout << "IAS connected succesfully" << std::endl;
 
-    encrypt_example();
+    from_hexstring(SPID.id, settings.spid.c_str(), 16);
 
-    const char spid[33] = "EE2913B7001E0EB387C64455527F625F";
-    from_hexstring(SPID.id, (void*)spid, 16);
-
-    std::string server_address("0.0.0.0:50051");
+    std::string server_address(settings.ip + ":" + settings.port);
     DataServerServiceImpl service;
 
     ServerBuilder builder;

@@ -4,7 +4,9 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 
-void handleErrors() {}
+void handleErrors() {
+    std::cout << "there was an error in cypher" << std::endl;
+}
 
 int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
             unsigned char *iv, unsigned char *ciphertext)
@@ -26,10 +28,13 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits
      */
-    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, key, iv))
+    unsigned char iv_[16];
+    memset(iv_, 0, 16);
+
+    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, key, iv_))
         handleErrors();
 
-    /*
+    /*  
      * Provide the message to be encrypted, and obtain the encrypted output.
      * EVP_EncryptUpdate can be called multiple times if necessary
      */
@@ -48,6 +53,13 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
     /* Clean up */
     EVP_CIPHER_CTX_free(ctx);
 
+    /*std::string plain(plaintext, plaintext + plaintext_len);
+    std::string out(ciphertext, ciphertext +ciphertext_len);
+    std::cout << "in: " << plain << std::endl;
+    std::cout << "out: ";
+    //print_hexstring(out.c_str(),ciphertext_len );
+    std::cout << "out_len : " << ciphertext_len << std::endl;*/
+
     return ciphertext_len;
 }
 
@@ -60,6 +72,9 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
 
     int plaintext_len;
 
+    unsigned char iv_[16];
+    memset(iv_, 0, 16);
+
     /* Create and initialise the context */
     if(!(ctx = EVP_CIPHER_CTX_new()))
         handleErrors();
@@ -71,7 +86,7 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits
      */
-    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, key, iv))
+    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, key, iv_))
         handleErrors();
 
     /*
@@ -106,11 +121,9 @@ std::string encrypt_message(const std::string& str, unsigned char *key) {
     return (char*)ciphertext;
 }
 
-int decrypt_message(unsigned char* str) {
-    unsigned char *key = getPublicKey();
-    unsigned char *iv = getIV();
+int decrypt_message(const std::string& str, unsigned char *key) {
     unsigned char decryptedtext[128];
-    int decryptedtext_len = decrypt(str, strlen((char*)str), key, iv,
+    int decryptedtext_len = decrypt((unsigned char*)str.c_str(), str.length(), key, nullptr,
                                 decryptedtext);
     decryptedtext[decryptedtext_len] = '\0';
     int num;
@@ -163,4 +176,82 @@ void encrypt_example()
     /* Show the decrypted text */
     printf("Decrypted text is:\n");
     printf("%s\n", decryptedtext);
+}
+
+
+
+
+void my_encrypt(const uint8_t *p_key, const uint8_t *p_src, uint32_t src_len,
+                uint8_t *p_dst, int &out_len, uint8_t *p_out_mac)
+{
+	/*if ((src_len >= INT_MAX) ||  || (p_key == NULL) || ((src_len > 0) && (p_dst == NULL)) || ((src_len > 0) && (p_src == NULL))
+		|| (p_out_mac == NULL) || (iv_len != SGX_AESGCM_IV_SIZE) || ((aad_len > 0) && (p_aad == NULL))
+		|| (p_iv == NULL) || ((p_src == NULL) && (p_aad == NULL)))
+	{
+		return SGX_ERROR_INVALID_PARAMETER;
+	}*/
+	EVP_CIPHER_CTX * pState = NULL;
+    int ciphertext_len;
+
+	do {
+		// Create and init ctx
+		//
+		if (!(pState = EVP_CIPHER_CTX_new())) {
+			std::cout << "out of memory" << std::endl;
+			break;
+		}
+
+		// Initialise encrypt, key and IV
+		//
+        uint8_t iv[12];
+        memset(iv, 0, 12);
+		if (1 != EVP_EncryptInit_ex(pState, EVP_aes_128_gcm(), NULL, (unsigned char*)p_key, iv)) {
+			std::cout << "bad" << std::endl;
+            break;
+		}
+
+        if (src_len > 0) {
+            // Provide the message to be encrypted, and obtain the encrypted output.
+            //
+            if (1 != EVP_EncryptUpdate(pState, p_dst, &out_len, p_src, src_len)) {
+                std::cout << "bad bad" << std::endl;
+                break;
+            }
+            ciphertext_len = out_len;    
+        }
+		// Finalise the encryption
+		//
+		if (1 != EVP_EncryptFinal_ex(pState, p_dst + out_len, &out_len)) {
+			std::cout << "bad 3" << std::endl;
+            break;
+		}
+        ciphertext_len += out_len;
+        out_len = ciphertext_len;
+
+		// Get tag
+		//
+		if (1 != EVP_CIPHER_CTX_ctrl(pState, EVP_CTRL_GCM_GET_TAG, 16, p_out_mac)) {
+            std::cout << "bad 4" << std::endl;
+			break;
+		}
+	} while (0);
+
+	// Clean up and return
+	//
+	if (pState) {
+			EVP_CIPHER_CTX_free(pState);
+	}
+}
+
+void my_encrypt_cpp(const std::string& in, std::string& out, std::string& mac, uint8_t* key) {
+    const uint8_t* p_src = (uint8_t*)in.c_str();
+    uint32_t src_len = strlen(in.c_str());
+    uint8_t p_dst[128] = {0};
+    int out_len = 0;
+    uint8_t p_mac[16] = {0};
+
+    my_encrypt(key, p_src, src_len, p_dst, out_len, p_mac);
+    out = std::string(p_dst, p_dst + out_len);
+
+    mac = std::string(p_mac, p_mac + 16);
 }

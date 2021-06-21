@@ -314,23 +314,27 @@ EVP_PKEY *key_private_from_bytes (const unsigned char buf[32])
 	key= EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
 	if ( key == NULL ) {
 		error_type= e_crypto;
+		printf("line 317\n");
 		goto cleanup;
 	}
 
 	if ( (prv= BN_lebin2bn((unsigned char *) buf, 32, NULL)) == NULL) {
 		error_type= e_crypto;
+		printf("line 323\n");
 		goto cleanup;
 	}
 
 
 	if ( ! EC_KEY_set_private_key(key, prv) ) {
 		error_type= e_crypto;
+		printf("line 330\n");
 		goto cleanup;
 	}
 
 	pkey= EVP_PKEY_new();
 	if ( pkey == NULL ) {
 		error_type= e_crypto;
+		printf("line 337\n");
 		goto cleanup;
 	}
 
@@ -338,10 +342,12 @@ EVP_PKEY *key_private_from_bytes (const unsigned char buf[32])
 		error_type= e_crypto;
 		EVP_PKEY_free(pkey);
 		pkey= NULL;
+		printf("line 345\n");
 	}
 
 cleanup:
 	if ( prv != NULL ) BN_free(prv);
+
 	if ( key != NULL ) EC_KEY_free(key);
 
 	return pkey;
@@ -838,12 +844,15 @@ int derive_kdk(EVP_PKEY *Gb, unsigned char kdk[16], ec256Key g_a)
 
     Ga = key_from_sgx_ec256(&g_a);
     if ( Ga == NULL ) {
+		crypto_perror("ga is null\n");
+		printf("Ga is null\n");
         return 0;
     }
 
     /* The shared secret in a DH exchange is the x-coordinate of Gab */
     Gab_x = key_shared_secret(Gb, Ga, &slen);
     if ( Gab_x == NULL ) {
+		printf("Gab_x is null\n");
         return 0;
     }
 
@@ -860,5 +869,13 @@ int derive_kdk(EVP_PKEY *Gb, unsigned char kdk[16], ec256Key g_a)
 
     cmac128(cmackey, Gab_x, slen, kdk);
 
+	printf("everything's ok\n");
+
     return 1;
+}
+
+EVP_PKEY *key_from_bytes (const std::string& bytes) {
+	uint8_t key_bytes[32] = {0};
+	from_hexstring(key_bytes, bytes.c_str(), 32);
+	return key_private_from_bytes(key_bytes);
 }

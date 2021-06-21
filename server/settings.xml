@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <ip>0.0.0.0</ip>
+    <port>50051</port>
+    <public_key>90e76cbb2d52a1ce3b66de11439c87ec1f866a3b65b6aeeaad573453d1038c01</public_key>
+    <spid>EE2913B7001E0EB387C64455527F625F</spid>
+    <primary_subscription_key>b94ae2aef38c48e98c4b98e06c531bf6</primary_subscription_key>
+    <secondary_subscription_key>83548b6ae777400d8aa6586cadbf34f8</secondary_subscription_key>
+    <ias_key_file>Intel_SGX_Attestation_RootCA.pem</ias_key_file>
+</settings>

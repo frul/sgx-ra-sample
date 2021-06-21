@@ -15,7 +15,7 @@ std::string convertUIntArray(uint8_t* bytes, size_t length) {
     return std::string(bytes, bytes + length);
 }
 
-void reverse_bytes(void *dest, void *src, size_t len)
+void reverse_bytes(void *dest, const void *src, size_t len)
 {
 	size_t i;
 	char *sp= (char *)src;
@@ -41,13 +41,23 @@ void convertToUIntArray(const std::string& source, uint8_t *dest) {
 }
 
 void convertIntArrayToBytes(uint32_t* arr, size_t len, std::string& out) {
-	char* intermediate = static_cast<char*>(static_cast<void*>(&arr));
+	char* intermediate = static_cast<char*>(static_cast<void*>(arr));
 	std::string result(intermediate, intermediate + len * 4);
 	out = result;
 }
 
 void convertCharArrayToBytes(uint8_t* arr, size_t len, std::string& out) {
-	char* intermediate = static_cast<char*>(static_cast<void*>(&arr));
+	char* intermediate = static_cast<char*>(static_cast<void*>(arr));
 	std::string result(intermediate, intermediate + len);
 	out = result;
+}
+
+void print_hexstring (const void *vsrc, size_t len)
+{
+	const unsigned char *sp= (const unsigned char *) vsrc;
+	size_t i;
+	for(i= 0; i< len; ++i) {
+		printf("%02x", sp[i]);
+	}
+	printf("\n");
 }

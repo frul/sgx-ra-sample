@@ -2,7 +2,9 @@
 cmake_minimum_required(VERSION 3.13)
 
 project(gRPC_CPP_Greetings VERSION 0.0.1 LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
 set (proto_name data_server)
@@ -33,10 +35,17 @@ set(targets "server")
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 foreach(target ${targets})
-    add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs} crypto_functions.cpp base64.cpp agent_wget.cpp iasrequest.cpp ../common/utils.cpp )
-    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES} ${OPENSSL_LIBRARIES} )
+
+    add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs} settings.cpp crypto_functions.cpp base64.cpp agent_wget.cpp iasrequest.cpp ../common/utils.cpp )
+    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES} ${OPENSSL_LIBRARIES} -lstdc++fs)
     message("PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES}")
     # Cannot do this because these directories are not available during CMake "compile time"
     # target_include_directories(${proto_hdrs} ${grpc_hdrs})
 endforeach()
+
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/settings.xml DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/alice.dat DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ivan.dat DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/Intel_SGX_Attestation_RootCA.pem DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
