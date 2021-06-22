@@ -40,19 +40,7 @@ namespace fs = std::experimental::filesystem;
 #include "iasrequest.hpp"
 #include "ias_services.hpp"
 #include "settings.hpp"
-
-std::vector<int> globalVector;
-
-bool init_global_vector()
-{
-    for (int i = 1; i <= 100; ++i) {
-        globalVector.push_back(i);
-    }
-    return true;
-}
-
-bool init_result = init_global_vector();
-
+#include "connection.hpp"
 
 SPIDType SPID;
 IAS_Connection *ias = NULL;
@@ -60,15 +48,6 @@ unsigned char pri_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1];
 unsigned char sec_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1];
 X509_STORE *cert_store;
 EVP_PKEY *g_service_private_key;
-
-GroupId gid_;
-unsigned char g_a_[64];
-unsigned char g_b_[64];
-unsigned char kdk_[16];
-unsigned char smk_[16];
-unsigned char sk_[16];
-unsigned char mk_[16];
-unsigned char vk_[16];
 
 bool endsWith(std::string str, std::string suffix)
 {
@@ -106,7 +85,7 @@ class DataServerServiceImpl final : public DataServer::Service {
 
     Status GetVector(ServerContext* context, const NoParams* empty,
                     ServerWriter<VectorElement>* writer) override {
-        std::cout << "Got a call from " << context->peer() << std::endl;
+        /*std::cout << "Got a call from " << context->peer() << std::endl;
         std::cout << "Inside GetVector" << std::endl;
         std::cout << "Vector size: " << globalVector.size() << std::endl;
 
@@ -124,7 +103,7 @@ class DataServerServiceImpl final : public DataServer::Service {
             element.set_mac(mac);
             writer->Write(element);
         }
-        std::cout << std::endl;
+        std::cout << std::endl;*/
         return Status::OK;
     }
 
@@ -151,7 +130,8 @@ class DataServerServiceImpl final : public DataServer::Service {
         //reverse_bytes(Ga.gy, msg01->ga_y().c_str(), SGX_ECP256_KEY_SIZE);
         memcpy(Ga.gy, msg01->ga_y().c_str(), SGX_ECP256_KEY_SIZE);
 
-        if(!derive_kdk(Gb, kdk_, Ga)) {
+        uint8_t *kdk = clients_[context->peer()].kdk;
+        if(!derive_kdk(Gb, kdk, Ga)) {
             return Status(StatusCode::INTERNAL, "Couldn't derive KDK");
         }
 
@@ -159,7 +139,8 @@ class DataServerServiceImpl final : public DataServer::Service {
         * Derive the SMK from the KDK 
         * SMK = AES_CMAC(KDK, 0x01 || "SMK" || 0x00 || 0x80 || 0x00) 
         */
-        cmac128(kdk_, (unsigned char *)("\x01SMK\x00\x80\x00"), 7, smk_);
+        uint8_t *smk = clients_[context->peer()].smk;
+        cmac128(kdk, (unsigned char *)("\x01SMK\x00\x80\x00"), 7, smk);
 
         /*
         * Build message 2
@@ -242,25 +223,29 @@ class DataServerServiceImpl final : public DataServer::Service {
         msg2->set_kdf_id(1);
         msg2_size += sizeof(uint32_t);
 
-        memcpy(gid_, msg01->gid().c_str(), 4);
+        uint8_t* gid = clients_[context->peer()].gid;
+        memcpy(gid, msg01->gid().c_str(), 4);
 
         char *sigrl = NULL;
-        if (!get_sigrl(ias, gid_, &sigrl, &msg2_as_struct->sig_rl_size))
+        if (!get_sigrl(ias, gid, &sigrl, &msg2_as_struct->sig_rl_size))
         {
             return Status(StatusCode::INTERNAL, "Could not retrieve the sigrl");
 	    }
 
         unsigned char digest[32], r[32], s[32], gb_ga[128];
+
+        uint8_t* g_a = clients_[context->peer()].g_a;
+        uint8_t* g_b = clients_[context->peer()].g_b;
         memcpy(gb_ga, &msg2_as_struct->g_b, 64);
-        memcpy(g_b_, &msg2_as_struct->g_b, 64);
+        memcpy(g_b, &msg2_as_struct->g_b, 64);
         memcpy(&gb_ga[64], &Ga, 64);
-        memcpy(g_a_, &Ga, 64);
+        memcpy(g_a, &Ga, 64);
         ecdsa_sign(gb_ga, 128, g_service_private_key, r, s, digest);
 
         reverse_bytes(&msg2_as_struct->sign_gb_ga.x, r, 32);
         reverse_bytes(&msg2_as_struct->sign_gb_ga.y, s, 32);
 
-        cmac128(smk_, (unsigned char *) msg2_as_struct, 148, (unsigned char *) &msg2_as_struct->mac);
+        cmac128(smk, (unsigned char *) msg2_as_struct, 148, (unsigned char *) &msg2_as_struct->mac);
 
         {
             std::string gbax;
@@ -301,7 +286,13 @@ class DataServerServiceImpl final : public DataServer::Service {
         memcpy(Ga.gx, msg3->ga_x().c_str(), SGX_ECP256_KEY_SIZE);
         memcpy(Ga.gy, msg3->ga_y().c_str(), SGX_ECP256_KEY_SIZE);
 
-        if (CRYPTO_memcmp(&Ga, &g_a_, sizeof(ec256Key))) {
+        uint8_t *g_a = clients_[context->peer()].g_a;
+        print_hexstring(g_a, 16);
+        print_hexstring(Ga.gx, 16);
+
+        print_hexstring(&g_a[32], 16);
+        print_hexstring(Ga.gy, 16);
+        if (CRYPTO_memcmp(&Ga, g_a, sizeof(ec256Key))) {
 		    return Status(StatusCode::FAILED_PRECONDITION, "msg1.g_a and mgs3.g_a keys don't match");
         }
         else {
@@ -314,9 +305,8 @@ class DataServerServiceImpl final : public DataServer::Service {
 
         size_t calculated_size = sizeof(Msg3Type) - sizeof(MacType) + quote_size;
 
-        
-
-        cmac128(smk_, (unsigned char *)&g_a_, calculated_size, (unsigned char *)vrfymac);
+        uint8_t *smk = clients_[context->peer()].smk;
+        cmac128(smk, (unsigned char *)&g_a, calculated_size, (unsigned char *)vrfymac);
         std::cout << "calculated size: " << calculated_size << std::endl;
 
         MacType mac_from_msg3;
@@ -338,7 +328,8 @@ class DataServerServiceImpl final : public DataServer::Service {
         QuoteType *q = (QuoteType *)malloc(quote_size);
         memcpy(q, msg3->quote().c_str(), quote_size);
         
-        if ( memcmp(gid_, &q->epid_group_id, sizeof(GroupId)) ) {
+        uint8_t *gid = clients_[context->peer()].gid;
+        if ( memcmp(gid, &q->epid_group_id, sizeof(GroupId)) ) {
             return Status(StatusCode::FAILED_PRECONDITION, "EPID GID mismatch. Attestation failed");
 	    }
         else {
@@ -367,16 +358,21 @@ class DataServerServiceImpl final : public DataServer::Service {
 
             /* Derive VK */
 
-            cmac128(kdk_, (unsigned char *)("\x01VK\x00\x80\x00"),
-                    6, vk_);
+            uint8_t *kdk = clients_[context->peer()].kdk;
+            uint8_t *vk = clients_[context->peer()].vk;
+            uint8_t *g_b = clients_[context->peer()].g_b;
+            uint8_t *mk = clients_[context->peer()].mk;
+            uint8_t *sk = clients_[context->peer()].sk;
+            cmac128(kdk, (unsigned char *)("\x01VK\x00\x80\x00"),
+                    6, vk);
 
             
 
             /* Build our plaintext */
 
-            memcpy(msg_rdata, g_a_, 64);
-            memcpy(&msg_rdata[64], g_b_, 64);
-            memcpy(&msg_rdata[128], vk_, 16);
+            memcpy(msg_rdata, g_a, 64);
+            memcpy(&msg_rdata[64], g_b, 64);
+            memcpy(&msg_rdata[128], vk, 16);
 
             /* SHA-256 hash */
 
@@ -398,29 +394,34 @@ class DataServerServiceImpl final : public DataServer::Service {
 
                 
 
-                cmac128(kdk_, (unsigned char *)("\x01MK\x00\x80\x00"),
-                    6, mk_);
-                cmac128(kdk_, (unsigned char *)("\x01SK\x00\x80\x00"),
-                    6, sk_);
+                cmac128(kdk, (unsigned char *)("\x01MK\x00\x80\x00"),
+                    6, mk);
+                cmac128(kdk, (unsigned char *)("\x01SK\x00\x80\x00"),
+                    6, sk);
 
                 
 
-                sha256_digest(mk_, 16, hashmk);
-                sha256_digest(sk_, 16, hashsk);
+                sha256_digest(mk, 16, hashmk);
+                sha256_digest(sk, 16, hashsk);
 
-                print_hexstring(mk_, 16);
+                print_hexstring(mk, 16);
                 print_hexstring(hashmk, 32);
 
                 
             }
         }
         msg4->set_ok(trusted);
+        clients_[context->peer()].trusted = trusted;
 
         return Status::OK;
 	}
 
     Status GetAvailableDataSets(ServerContext* context,
         const NoParams* request, ServerWriter<DataSetName>* writer) override {
+        
+        if (!clients_[context->peer()].trusted) {
+            return Status(StatusCode::PERMISSION_DENIED, "Enclave is not attested");
+        }
         std::vector<std::string> dataSets;
         GetDataSets(dataSets);
         for (const auto & entry : dataSets) {
@@ -433,6 +434,11 @@ class DataServerServiceImpl final : public DataServer::Service {
 
     Status GetDataSet(ServerContext* context,
         const DataSetName* request, ServerWriter<VectorElement>* writer) override {
+        
+        if (!clients_[context->peer()].trusted) {
+            return Status(StatusCode::PERMISSION_DENIED, "Enclave is not attested");
+        }
+
         std::vector<std::string> dataSets;
         GetDataSets(dataSets);
         std::string requested_dataset = request->name();
@@ -448,12 +454,14 @@ class DataServerServiceImpl final : public DataServer::Service {
             return Status(StatusCode::NOT_FOUND, "Problem with the dataset");
         }
 
-        cmac128(kdk_, (unsigned char *)("\x01MK\x00\x80\x00"), 6, mk_);
+        uint8_t *kdk = clients_[context->peer()].kdk;
+        uint8_t *mk = clients_[context->peer()].mk;
+        cmac128(kdk, (unsigned char *)("\x01MK\x00\x80\x00"), 6, mk);
 
         for (int i = 0; i < dataSet.size(); ++i) {
             VectorElement element;
             std::string encrypted, mac;
-            my_encrypt_cpp(dataSet[i], encrypted, mac, mk_);
+            my_encrypt_cpp(dataSet[i], encrypted, mac, mk);
 
             element.set_num(encrypted);
             element.set_mac(mac);
@@ -461,7 +469,9 @@ class DataServerServiceImpl final : public DataServer::Service {
         }
 
         return Status::OK;
-    }       
+    }  
+
+    std::unordered_map<std::string, ConnectionAttributes> clients_;
 
 };
 

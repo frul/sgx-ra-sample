@@ -44,6 +44,13 @@ endif()
 
 # Add example projects
 
-add_subdirectory(client)
+option(BUILD_CLIENT "Build client part" ON)
+option(BUILD_SERVER "Build server part" ON)
 
-add_subdirectory(server)
+if(BUILD_CLIENT)
+  add_subdirectory(client)
+endif()
+
+if (BUILD_SERVER)
+  add_subdirectory(server)
+endif()
