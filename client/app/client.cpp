@@ -220,11 +220,13 @@ public:
         return 0;
     }
 
-    
     bool attest() {
         sgx_status_t status, sgxrv;
         sgx_ra_context_t ra_ctx = 0x0;
-        status = ecall_initialize_ra(global_eid, &sgxrv, &ra_ctx);
+        uint8_t key[64] = {0};
+        from_hexstring(key, settings.public_key.c_str(), 64);
+        status = ecall_initialize_ra(global_eid, &sgxrv,
+            &ra_ctx, key, 64);
         if (status != SGX_SUCCESS) {
             std::stringstream ss;
             ss << "enclave_ra_init: " << std::hex << status;
@@ -240,6 +242,7 @@ public:
         }
 
         sgx_ra_msg1_t msg1;
+        ra_ctx = 0x0;
         status = sgx_ra_get_msg1(ra_ctx, global_eid, sgx_ra_get_ga, &msg1);
         if ( status != SGX_SUCCESS ) {
             std::stringstream ss;
@@ -380,40 +383,15 @@ private:
 };
 
 void InterativeGRPC() {
-
-    // Instantiate the client. It requires a channel, out of which the actual RPCs are created. 
-    // This channel models a connection to an endpoint (in this case, localhost at port 50051). 
-    // We indicate that the channel isn't authenticated (use of InsecureChannelCredentials()).
     DataServerClient dataServerClient(
         grpc::CreateChannel(settings.ip + ":" + settings.port,
         grpc::InsecureChannelCredentials()));
-        /*std::string user;
-        std::cout << "Please enter your user name:" << std::endl;
-        // std::cin >> user;
-        std::getline(std::cin, user);
-        std::string reply = greeter.SayHello(user);
-        if (reply == "gRPC failed") {
-            std::cout << "gRPC failed" << std::endl;
-        }
-        std::cout << "gRPC returned: " << std::endl;
-        std::cout << reply << std::endl;
-
-        std::cout << "we sent the greetings again" << std::endl;
-        reply = greeter.SayHelloAgain(user);
-        if (reply == "gRPC failed") {
-            std::cout << "gRPC failed" << std::endl;
-        }
-        std::cout << "gRPC returned: " << std::endl;
-        std::cout << reply << std::endl;*/
 
     if(dataServerClient.init() != 0) {
         std::cout << "Failed to initialize the enclave" << std::endl;
     }
 
-    int rand;
-    generate_random_number(global_eid, &rand);
-    std::cout << "Random number: " << rand << std::endl;
-
+    std::cout << "Attesting enclave..." << std::endl;
     bool attested = false;
     try {
         attested = dataServerClient.attest();
@@ -427,26 +405,6 @@ void InterativeGRPC() {
         std::cout << "Enclave is not trusted. Exiting" << std::endl;
         return;
     }
-
-    /*{
-        sgx_status_t key_status, sha_status;
-		sgx_sha256_hash_t mkhash;
-        sgx_ra_context_t ra_ctx = 0x0;
-        sgx_status_t status;
-		// First the MK
-
-		status= enclave_ra_get_key_hash(global_eid, &sha_status, &key_status, ra_ctx,
-			SGX_RA_KEY_MK, &mkhash);
-		printf("+++ ECALL enclage_ra_get_key_hash (MK) ret= 0x%04x\n",
-			status);
-
-		printf("+++ sgx_ra_get_keys (MK) ret= 0x%04x\n", key_status);
-
-        printf("SHA256(MK) = ");
-        print_hexstring(mkhash, sizeof(mkhash));
-        printf("\n");
-		
-    }*/
 
     std::cout << "Enclave is trusted" << std::endl;
 
