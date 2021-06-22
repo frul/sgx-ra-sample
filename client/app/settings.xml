@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <ip>localhost</ip>
+    <port>50051</port>
+    <public_key>90e76cbb2d52a1ce3b66de11439c87ec1f866a3b65b6aeeaad573453d1038c01</public_key>
+</settings>

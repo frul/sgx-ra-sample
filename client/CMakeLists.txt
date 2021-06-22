@@ -32,9 +32,11 @@ add_enclave_library(enclave SRCS ${E_SRCS} EDL enclave/enclave.edl EDL_SEARCH_PA
 enclave_sign(enclave KEY enclave/Enclave_private.pem CONFIG enclave/enclave.config.xml)
 
 set(targets "client")
-set(SRCS app/client.cpp ../common/utils.cpp)
+set(SRCS app/client.cpp ../common/utils.cpp app/settings.cpp)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 add_untrusted_executable(client SRCS ${SRCS} ${proto_srcs} ${grpc_srcs} EDL enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS})
 
 add_dependencies(client enclave-sign)
+
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/app/settings.xml DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

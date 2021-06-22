@@ -9,6 +9,7 @@
 
 #include "../../common/encryption.hpp"
 #include "../../common/utils.hpp"
+#include "settings.hpp"
 
 #include "enclave_u.h"
 #include "sgx_urts.h"
@@ -43,6 +44,8 @@ void ocall_print_string(const char *str)
 void ocall_print_number(int num) {
     std::cout << "print number from enclave " << num << std::endl;
 }
+
+Settings settings = ReadSettings();
 
 int initialize_enclave(sgx_enclave_id_t* eid, const std::string& launch_token_path, const std::string& enclave_name) {
     const char* token_path = launch_token_path.c_str();
@@ -381,7 +384,9 @@ void InterativeGRPC() {
     // Instantiate the client. It requires a channel, out of which the actual RPCs are created. 
     // This channel models a connection to an endpoint (in this case, localhost at port 50051). 
     // We indicate that the channel isn't authenticated (use of InsecureChannelCredentials()).
-    DataServerClient dataServerClient(grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
+    DataServerClient dataServerClient(
+        grpc::CreateChannel(settings.ip + ":" + settings.port,
+        grpc::InsecureChannelCredentials()));
         /*std::string user;
         std::cout << "Please enter your user name:" << std::endl;
         // std::cin >> user;
