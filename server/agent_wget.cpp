@@ -23,6 +23,7 @@ in the License.
 #include "httpparser/response.h"
 #include "httpparser/httpresponseparser.h"
 #include "agent_wget.hpp"
+#include "agent_curl.hpp"
 #include "iasrequest.hpp"
 
 using namespace std;
@@ -33,7 +34,8 @@ using namespace httpparser;
 
 static vector<string> wget_args;
 
-extern int debug, verbose;
+static int debug = 0;
+static int verbose = 0;
 
 #define CHUNK_SZ 8192
 #define WGET_NO_ERROR		0

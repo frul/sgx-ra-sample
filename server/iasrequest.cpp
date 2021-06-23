@@ -7,6 +7,7 @@
 #include "crypto_functions.hpp"
 #include "agent.hpp"
 #include "agent_wget.hpp"
+#include "agent_curl.hpp"
 #include "iasrequest.hpp"
 #include "httpparser/response.h"
 #include "base64.hpp"
@@ -17,8 +18,9 @@ using namespace httpparser;
 #include <string>
 #include <exception>
 
-char debug = 0;
-char verbose = 0;
+static char debug = 0;
+static char verbose = 0;
+static std::string 	c_agent_name= "libcurl";
 
 static string ias_servers[2]= {
     IAS_SERVER_DEVELOPMENT_HOST,
@@ -45,7 +47,6 @@ IAS_Connection::IAS_Connection(int server_idx, uint32_t flags, char *priSubscrip
 	c_server_port= IAS_PORT;
 	c_proxy_mode= IAS_PROXY_AUTO;
 	c_agent= NULL;
-	c_agent_name= "";
 	c_proxy_port= 80;
 	c_store= NULL;
 	setSubscriptionKey(SubscriptionKeyID::Primary, "b94ae2aef38c48e98c4b98e06c531bf6"); 
@@ -179,7 +180,16 @@ Agent *IAS_Connection::new_agent()
 
 	if ( c_agent_name.length() ) {
 #ifdef AGENT_WGET
-		if ( c_agent_name == AgentWget::name ) {
+		if ( c_agent_name == AgentCurl::name ) {
+			try {
+				newagent= (Agent *) new AgentCurl(this);
+			}
+			catch (...) {
+				if ( newagent != NULL ) delete newagent;
+				return NULL;
+			}
+			return newagent;
+		} else {
 			try {
 				newagent= (Agent *) new AgentWget(this);
 			}
@@ -209,7 +219,7 @@ Agent *IAS_Connection::new_agent()
 		if ( newagent == NULL ) {
 			if ( debug ) printf("+++ Trying agent_wget\n");
 			try {
-				newagent= (Agent *) new AgentWget(this);
+				newagent= (Agent *) new AgentCurl(this);
 			}
 			catch (...) { 
 				if ( newagent != NULL ) delete newagent;

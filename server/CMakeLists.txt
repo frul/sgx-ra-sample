@@ -29,15 +29,18 @@ add_custom_command(
     DEPENDS "${proto}"
 )
 
+
+find_package(CURL)
+
 set(targets "server")
 
 # Include generated *.pb.h files
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR} ${CURL_INCLUDE_DIR})
 
 foreach(target ${targets})
 
-    add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs} settings.cpp crypto_functions.cpp base64.cpp agent_wget.cpp iasrequest.cpp ../common/utils.cpp )
-    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES} ${OPENSSL_LIBRARIES} -lstdc++fs)
+    add_executable(${target} "${target}.cpp" ${proto_srcs} ${grpc_srcs} settings.cpp crypto_functions.cpp base64.cpp agent_wget.cpp agent_curl.cpp iasrequest.cpp ../common/utils.cpp )
+    target_link_libraries(${target} PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES} ${OPENSSL_LIBRARIES} ${CURL_LIBRARIES} -lstdc++fs)
     message("PRIVATE ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} ${LIBXML2_LIBRARIES}")
     # Cannot do this because these directories are not available during CMake "compile time"
     # target_include_directories(${proto_hdrs} ${grpc_hdrs})
