@@ -110,6 +110,7 @@ class DataServerServiceImpl final : public DataServer::Service {
     Status StartAttestation(ServerContext* context,
         const AttestationMsg0andMsg1* msg01, AttestationMsg2* msg2) {
 
+        std::cout << "Got attestation request from: " << context->peer() << std::endl;
         // IAS only supports zero extended EPID
         if (msg01->extended_epid_group_id() != 0) {
             return Status(StatusCode::INVALID_ARGUMENT, "Non-Zero EPID Group Id");
@@ -287,18 +288,10 @@ class DataServerServiceImpl final : public DataServer::Service {
         memcpy(Ga.gy, msg3->ga_y().c_str(), SGX_ECP256_KEY_SIZE);
 
         uint8_t *g_a = clients_[context->peer()].g_a;
-        print_hexstring(g_a, 16);
-        print_hexstring(Ga.gx, 16);
-
-        print_hexstring(&g_a[32], 16);
-        print_hexstring(Ga.gy, 16);
+        
         if (CRYPTO_memcmp(&Ga, g_a, sizeof(ec256Key))) {
 		    return Status(StatusCode::FAILED_PRECONDITION, "msg1.g_a and mgs3.g_a keys don't match");
         }
-        else {
-            std::cout << "msg1 ga and mag3 ga MATCH" << std::endl;
-        }
-
 
         size_t quote_size = msg3->quote_size();
         MacType vrfymac, mac2;
@@ -307,14 +300,11 @@ class DataServerServiceImpl final : public DataServer::Service {
 
         uint8_t *smk = clients_[context->peer()].smk;
         cmac128(smk, (unsigned char *)&g_a, calculated_size, (unsigned char *)vrfymac);
-        std::cout << "calculated size: " << calculated_size << std::endl;
 
         MacType mac_from_msg3;
         memcpy(mac_from_msg3, msg3->mac().c_str(), SGX_MAC_SIZE);
 
         reverse_bytes(mac2, mac_from_msg3, 16);
-        print_hexstring(vrfymac, 16);
-        print_hexstring(mac2, 16);
 
         /*if (CRYPTO_memcmp(mac_from_msg3, vrfymac, SGX_MAC_SIZE) ) {
             return Status(StatusCode::FAILED_PRECONDITION, "Failed to verify msg3 MAC");
@@ -332,9 +322,6 @@ class DataServerServiceImpl final : public DataServer::Service {
         if ( memcmp(gid, &q->epid_group_id, sizeof(GroupId)) ) {
             return Status(StatusCode::FAILED_PRECONDITION, "EPID GID mismatch. Attestation failed");
 	    }
-        else {
-            std::cout << "msg1 epid and quote epid MATCH" << std::endl;
-        }
 
         bool trusted = false;
         PropertyType sec_prop;
@@ -404,14 +391,16 @@ class DataServerServiceImpl final : public DataServer::Service {
                 sha256_digest(mk, 16, hashmk);
                 sha256_digest(sk, 16, hashsk);
 
-                print_hexstring(mk, 16);
-                print_hexstring(hashmk, 32);
+                //print_hexstring(mk, 16);
+                //print_hexstring(hashmk, 32);
 
                 
             }
         }
         msg4->set_ok(trusted);
         clients_[context->peer()].trusted = trusted;
+        std::cout << "Enclave from " << context->peer() << " is ";
+        std::cout << (trusted? "trusted" : "not trusted") << std::endl;
 
         return Status::OK;
 	}
@@ -516,8 +505,6 @@ void RunServer() {
 	catch (...) {
 		printf("exception while creating IAS request object\n");
     }
-
-    std::cout << "IAS connected succesfully" << std::endl;
 
     from_hexstring(SPID.id, settings.spid.c_str(), 16);
 

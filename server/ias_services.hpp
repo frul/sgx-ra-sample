@@ -15,6 +15,7 @@ int get_sigrl (IAS_Connection *ias, GroupId gid,
 	IAS_Request *req= NULL;
 	int oops= 1;
 	string sigrlstr;
+	bool debug = false;
 
 	try {
 		oops= 0;
@@ -36,8 +37,10 @@ int get_sigrl (IAS_Connection *ias, GroupId gid,
 
 		ret =  req->sigrl(*(uint32_t *) gid, sigrlstr);
 		
+		if (debug) {
 			printf("+++ RET = %u\n", ret);
 			printf("+++ SubscriptionKeyID = %d\n",(int)ias->getSubscriptionKeyID());
+		}
             
 	
 		if ( ret == IAS_UNAUTHORIZED && (ias->getSubscriptionKeyID() == IAS_Connection::SubscriptionKeyID::Primary))
@@ -72,7 +75,8 @@ int get_sigrl (IAS_Connection *ias, GroupId gid,
 
 	*sig_rl_size = (uint32_t)size;
 	delete req;
-	printf("IAS OK and SigRL size is %d\n", *sig_rl_size);
+	if (debug)
+		printf("IAS OK and SigRL size is %d\n", *sig_rl_size);
 	return 1;
 }
 
@@ -219,28 +223,26 @@ int get_attestation_report(IAS_Connection *ias,
 
 		if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("OK"))) {
 			*trusted = true;
-			if ( verbose ) printf("Enclave TRUSTED\n");
+			printf("Enclave TRUSTED\n");
 		} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("CONFIGURATION_NEEDED"))) {
-			if ( strict_trust ) {
-				*trusted = true;
-				if ( verbose ) printf("Enclave NOT TRUSTED and COMPLICATED - Reason: %s\n",
-					reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
-			} else {
-				if ( verbose ) printf("Enclave TRUSTED and COMPLICATED - Reason: %s\n",
-					reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
-				*trusted = true;
-			}
-		} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("GROUP_OUT_OF_DATE"))) {
-			*trusted = true;
-			if ( verbose ) printf("Enclave NOT TRUSTED and COMPLICATED - Reason: %s\n",
+			printf("Enclave TRUSTED and COMPLICATED - Reason: %s\n",
 				reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
+			*trusted = true;
+		} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("GROUP_OUT_OF_DATE"))) {
+			*trusted = false;
+			printf("Enclave NOT TRUSTED - group is out of data:\n");
 		} else {
 			*trusted = false;
-			if ( verbose ) printf("Enclave NOT TRUSTED - Reason: %s\n",
-				reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
+			
 			if (reportObj["isvEnclaveQuoteStatus"].ToString() == "SW_HARDENING_NEEDED") {
 				if (dissalowed_advisories.empty()) {
 					*trusted = true;
+				} else {
+					printf("Enclave NOT TRUSTED - becuase software hardening is needed");
+					printf("List of advisories:\n");
+					for (auto e: dissalowed_advisories) {
+						printf("%s", e.c_str());
+					}
 				}
 			}
 		}

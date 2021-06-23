@@ -191,24 +191,26 @@ public:
         if (sgx_status != SGX_SUCCESS) {
             std::cout << "ecall_receive_score failded with error: " << sgx_status;
         }
-        std::cout << "Reduced vector result: " << score << std::endl;
+        std::cout << "score for the dataset " << name << " is: " << score << std::endl;
     }
 
-    void PrintAvailableDataSets() {
+    std::vector<std::string> PrintAvailableDataSets() {
         ClientContext context;
         NoParams no_params;
         std::unique_ptr<ClientReader<DataSetName> > reader(
             stub_->GetAvailableDataSets(&context, no_params));
         DataSetName element;
+        std::vector<std::string> result;
         while (reader->Read(&element)) {
-            std::string nm = element.name();
-            std::cout << nm << std::endl;
+            result.push_back(element.name());
         }
 
         Status status = reader->Finish();
         if (!status.ok()) {
             std::cout << "GetAvailableDataSets failed." << std::endl;
         }
+
+        return std::move(result);
     }
 
     int init() {
@@ -274,17 +276,13 @@ public:
 
             {
                 std::string gid_to_send;
-                print_hexstring(msg1.gid, 4);
                 convertCharArrayToBytes(msg1.gid, 4, gid_to_send);
                 server_msg01.set_gid(gid_to_send);
             }
 
             ClientContext context;
             Status status = stub_->StartAttestation(&context, server_msg01, &server_msg2);
-            if (status.ok()) {
-                std::cout << "msg2 from the server received succesfully" << std::endl;
-            } 
-            else {
+            if (!status.ok()) {
                 std::stringstream ss;
                 ss << status.error_code() << ": " << status.error_message();
                 throw std::runtime_error(ss.str());
@@ -364,10 +362,7 @@ public:
 
             ClientContext context;
             Status status = stub_->CompleteAttestation(&context, server_msg3, &server_msg4);
-            if (status.ok()) {
-                std::cout << "msg4 from the server received succesfully" << std::endl;
-            } 
-            else {
+            if (!status.ok()) {
                 std::stringstream ss;
                 ss << status.error_code() << ": " << status.error_message();
                 throw std::runtime_error(ss.str());
@@ -407,11 +402,18 @@ void InterativeGRPC() {
     }
 
     std::cout << "Enclave is trusted" << std::endl;
+    std::cout << "List of available datasets on the service provider:" << std::endl;
+
+    std::vector<std::string> datasets;
+    datasets = dataServerClient.PrintAvailableDataSets();
+    for (int i = 0; i < datasets.size(); ++i) {
+        std::cout << i + 1 << ": " << datasets[i] << std::endl;
+    }
 
     while(1) {
         std::cout << "Select command" << std::endl;
         std::cout << "1. Get list of datasets" << std::endl;
-        std::cout << "2. Get dataset score by name" << std::endl;
+        std::cout << "2. Score dataset by index" << std::endl;
         std::cout << "3. exit" << std::endl;
 
         int command;
@@ -419,14 +421,23 @@ void InterativeGRPC() {
 
         switch (command) {
             case 1: {
-                dataServerClient.PrintAvailableDataSets();
+                datasets = dataServerClient.PrintAvailableDataSets();
+                for (int i = 0; i < datasets.size(); ++i) {
+                    std::cout << i + 1 << ": " << datasets[i] << std::endl;
+                }
                 break;
             }
             case 2: {
-                std::string name;
-                std::cin >> name;
+                int i;
+                std::cout << "Enter dataset number" << std::endl;
+                std::cin >> i;
+                i -= 1;
+                if (i < 0 || i >= datasets.size()) {
+                    std::cout << "invalid index" << std::endl;
+                    break;
+                }
                 try {
-                    dataServerClient.PrintScore(name);
+                    dataServerClient.PrintScore(datasets[i]);
                 }
                 catch (const std::exception& e) {
                     std::cout << "PrintScore failed with: " << e.what();

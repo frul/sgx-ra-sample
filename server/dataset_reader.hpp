@@ -45,6 +45,6 @@ void ReadDataSet(const std::string& path, std::vector<std::string>& out) {
 
     std::string data((char*)result);
     data = std::regex_replace(data, std::regex("^ +| +$|( ) +"), "$1");
-    std::cout << "Data read: " << data << std::endl;
+    //std::cout << "Data read: " << data << std::endl;
     out = split(data, ',');
 }

@@ -869,8 +869,6 @@ int derive_kdk(EVP_PKEY *Gb, unsigned char kdk[16], ec256Key g_a)
 
     cmac128(cmackey, Gab_x, slen, kdk);
 
-	printf("everything's ok\n");
-
     return 1;
 }
 
