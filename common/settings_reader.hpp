@@ -32,7 +32,7 @@ public:
                 return def;
             }
             else {
-                throw std::runtime_error("setting is absent and no default value is set");
+                throw std::runtime_error("setting " + name + " is absent and no default value is set");
             }
         }
 

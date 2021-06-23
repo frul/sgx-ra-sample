@@ -479,7 +479,7 @@ void RunServer() {
     
     crypto_init();
 
-    g_service_private_key = key_from_bytes(settings.public_key);
+    g_service_private_key = key_from_bytes(settings.private_key);
     
     try {
         from_hexstring(pri_subscription_key, settings.primary_subscription_key.c_str(), 33);

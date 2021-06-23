@@ -32,9 +32,6 @@ find_package(LibXml2 REQUIRED)
 include_directories(${LIBXML2_INCLUDE_DIRS})
 set(_LIBXML lxml)
 
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
-find_package(SGX REQUIRED)
-
 set(_GRPC_GRPCPP gRPC::grpc++)
 if(CMAKE_CROSSCOMPILING)
   find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
@@ -48,6 +45,9 @@ option(BUILD_CLIENT "Build client part" ON)
 option(BUILD_SERVER "Build server part" ON)
 
 if(BUILD_CLIENT)
+  list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+  find_package(SGX REQUIRED)
+
   add_subdirectory(client)
 endif()
 
