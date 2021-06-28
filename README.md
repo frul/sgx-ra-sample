@@ -91,8 +91,44 @@ Both server and client have settings.xml file that need to be placed to the curr
  - primary_subscription_key IAS Subscription Primary Key
  - secondary_subscription_key IAS Subscription Secondary Key
  - ias_key_file path to the IAS website certificated downloaded
+ - accepted_signer - allowed value of the signer (MRSIGNER) of the enclave, if not specified - any signer is accepted
+ - accepted_hash - allowed value of the enclave measurement (MRENCLAVE), i.e. hash of the memory footpring, if not specified then any code running in enclave is accepted
 
 ## Client settings
 - ip address where client is run
 - port it occupies
 - public_key 256bit server public key
+
+# Signing and signing checks
+
+## Sign
+Only signed enclaves can run on a valid SGX system
+please refer to https://software.intel.com/content/dam/develop/public/us/en/documents/enclave-signing-tool-for-intel-sgx.pdf in order to sign the enclave by yourself
+
+## Receive reference values of MRSIGNER and MRENCLAVE
+
+Additional validation can be set in order to be sure that enclave is signed by an expected authority (MRSIGNER matches the expected value) and/or that the enclave doesn't run modified code after the latest compilation (MRENCLAVE matcheds). These values are measured once the enclave is compiled and signed and then saved on the server. In order to obtain those values, one should run sgx_sign tool from SGX SDK:
+
+```
+sgx_sign dump -enclave <signed enclave file> -dumpfile <output file>
+```
+
+The above values are found at these sections of the output file:
+```
+mrsigner->value
+```
+for MRSIGNER
+
+and
+```
+metadata->enclave_css.body.enclave_hash.m
+```
+for MRENCLAVE
+
+write those values as 32-bit hex string to the corresponding setting field in settings.xml, like:
+```
+    <accepted_signer>aaaaaaaabbbbbbbbccccccccdddddddddeeeeeeeedddddddd11111111222222</accepted_signer>
+    <accepted_hash>aaaaaaaabbbbbbbbccccccccdddddddddeeeeeeeedddddddd11111111222222</accepted_hash>
+```
+
+If you leave any of those values empty, the corresponding check will now be performed

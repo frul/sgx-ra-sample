@@ -13,6 +13,8 @@ ServerSettings ReadServerSettings() {
     result.primary_subscription_key = reader.ReadSetting("primary_subscription_key");
     result.secondary_subscription_key = reader.ReadSetting("secondary_subscription_key");
     result.ias_key_file = reader.ReadSetting("ias_key_file");
+    result.accepted_signer = reader.ReadSetting("accepted_signer");
+    result.accepted_hash = reader.ReadSetting("accepted_hash");
 
     return result;
 }

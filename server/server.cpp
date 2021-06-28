@@ -48,6 +48,10 @@ unsigned char pri_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1];
 unsigned char sec_subscription_key[IAS_SUBSCRIPTION_KEY_SIZE+1];
 X509_STORE *cert_store;
 EVP_PKEY *g_service_private_key;
+sgx_measurement_t accepted_signer;
+bool check_signer = false;
+sgx_measurement_t accepted_hash;
+bool check_hash = false;
 
 bool endsWith(std::string str, std::string suffix)
 {
@@ -329,10 +333,9 @@ class DataServerServiceImpl final : public DataServer::Service {
         if ( get_attestation_report(ias, b64quote, sec_prop, &trusted) ) {
             unsigned char vfy_rdata[64];
             unsigned char msg_rdata[144]; /* for Ga || Gb || VK */
-
-            sgx_report_body_t *r= (sgx_report_body_t *) &q->report_body;
-
             memset(vfy_rdata, 0, 64);
+
+            ReportBodyType *r= (ReportBodyType*) &q->report_body;
 
             /*
                 * Verify that the first 64 bytes of the report data (inside
@@ -367,7 +370,30 @@ class DataServerServiceImpl final : public DataServer::Service {
 
             if ( CRYPTO_memcmp((void *) vfy_rdata, (void *) &r->report_data, 64) ) {
 
-                printf("Report verification failed.\n");
+                std::cout << "Report verification failed" << std::endl;
+                trusted = false;
+            }
+
+            if (check_signer) {
+                if (memcmp(accepted_signer.m, r->mr_signer.m, 32)) {
+                    std::cout << "Signer is not known" << std::endl;
+                    std::cout << "Expected: " << std::endl;
+                    print_hexstring(accepted_signer.m, 32);
+                    std::cout << "Received: " << std::endl;
+                    print_hexstring(r->mr_signer.m, 32);
+                    trusted = false;
+                }
+            }
+
+            if (check_hash) {
+                if (memcmp(accepted_hash.m, r->mr_enclave.m, 32)) {
+                    std::cout << "MRENCLAVE is not known" << std::endl;
+                    std::cout << "Expected: " << std::endl;
+                    print_hexstring(accepted_hash.m, 32);
+                    std::cout << "Received: " << std::endl;
+                    print_hexstring(r->mr_enclave.m, 32);
+                    trusted = false;
+                }
             }
 
             /*
@@ -377,24 +403,10 @@ class DataServerServiceImpl final : public DataServer::Service {
                 */
 
             if ( trusted ) {
-                unsigned char hashmk[32], hashsk[32];
-
-                
-
                 cmac128(kdk, (unsigned char *)("\x01MK\x00\x80\x00"),
                     6, mk);
                 cmac128(kdk, (unsigned char *)("\x01SK\x00\x80\x00"),
-                    6, sk);
-
-                
-
-                sha256_digest(mk, 16, hashmk);
-                sha256_digest(sk, 16, hashsk);
-
-                //print_hexstring(mk, 16);
-                //print_hexstring(hashmk, 32);
-
-                
+                    6, sk);                
             }
         }
         msg4->set_ok(trusted);
@@ -507,6 +519,16 @@ void RunServer() {
     }
 
     from_hexstring(SPID.id, settings.spid.c_str(), 16);
+
+    if (!settings.accepted_signer.empty()) {
+        from_hexstring(accepted_signer.m, settings.accepted_signer.c_str(), 32);
+        check_signer = true;
+    }
+
+    if (!settings.accepted_hash.empty()) {
+        from_hexstring(accepted_hash.m, settings.accepted_hash.c_str(), 32);
+        check_hash = true;
+    }
 
     std::string server_address(settings.ip + ":" + settings.port);
     DataServerServiceImpl service;
